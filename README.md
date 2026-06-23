@@ -2,6 +2,9 @@
 
 Gocurvicnamics is an asynchronous, kinetic trajectory-based strategy game built using a dual-layer architecture. It leverages a blazing-fast Rust backend for continuous physics resolution and a modern, glassmorphic Vanilla JS frontend via Tauri v2 for rendering and input handling.
 
+![Gocurvicnamics](./assets/icon.png)
+![UI](./assets/Gocurvicnamics_Checkpoint_1.JPG)
+
 ## Core Gameplay Mechanics
 
 ### 1. Symmetric Squared Board Topology
