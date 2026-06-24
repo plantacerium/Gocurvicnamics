@@ -1,67 +1,95 @@
-import { Board } from './Board.js';
-import { PhysicsEngine } from './Physics.js';
-import { TraceInput, TRACE_STATES } from './TraceInput.js';
-import { Renderer } from './Renderer.js';
+import { TURN_STATES, EVENTS } from '../core/Constants.js';
+import { eventBus } from '../core/EventBus.js';
+import { PhysicsSync } from './physics/PhysicsSync.js';
+import { TraceInput } from './trace/TraceInput.js';
+import { Renderer } from './render/Renderer.js';
+import { AnimationController } from './animation/AnimationController.js';
+import { CurveAnimator } from './animation/CurveAnimator.js';
+import { GhostTrailRenderer } from './animation/GhostTrailRenderer.js';
+import { ScoreManager } from './scoring/ScoreManager.js';
+import { ShockwaveGenerator } from './collision/ShockwaveGenerator.js';
+import { DamageResolver } from './collision/DamageResolver.js';
+import { GameLoop } from './GameLoop.js';
+import { PHYSICS_TICK_INTERVAL, PHYSICS_DEFAULTS } from '../config/PhysicsConfig.js';
+import { GAMEPLAY_DEFAULTS } from '../config/GameplayConfig.js';
+import { Logger } from '../utils/Logger.js';
+import { gameState } from '../core/GameState.js';
+import { ReplayerDB } from '../db/ReplayerDB.js';
 
-export const TURN_STATES = {
-  SELECT_PIECE: 'SELECT_PIECE',
-  DRAW_TRACE: 'DRAW_TRACE',
-  ANIMATING_TRACE: 'ANIMATING_TRACE', // Moving along Bezier
-  PHYSICS_RESOLVE: 'PHYSICS_RESOLVE'  // Letting Matter.js settle
-};
+const log = Logger('TurnManager');
 
 export class TurnManager {
-  constructor(canvas, board) {
+  constructor(canvas, board, config) {
     this.canvas = canvas;
     this.board = board;
-    
-    this.physics = new PhysicsEngine(this.board);
-    this.physics.syncFromBoard();
-    
+    this.config = config;
+
+    this.physics = null;
     this.traceInput = new TraceInput(canvas);
-    this.renderer = new Renderer(canvas, this.board, this.traceInput);
-    
+    this.renderer = new Renderer(canvas, board, this.traceInput);
+    this.animator = new AnimationController();
+    this.ghostTrails = new GhostTrailRenderer();
+    this.scoreManager = new ScoreManager();
+    this.shockwaveGen = new ShockwaveGenerator();
+    this.damageResolver = new DamageResolver();
+
+    this.renderer.shockwaveGenerator = this.shockwaveGen;
+    this.renderer.ghostTrailRenderer = this.ghostTrails;
+
     this.currentPlayer = 1;
     this.state = TURN_STATES.SELECT_PIECE;
-    
-    this.animatingPieceId = null;
-    this.activeCurves = null;
-    this.currentCurveIndex = 0;
-    this.curveProgress = 0; // 0 to 1 per curve
-    
-    this.p1Score = 0;
-    this.p2Score = 0;
-    
-    this.bindEvents();
-    
-    // Start game loop
-    this.lastTime = performance.now();
-    this.isPhysicsTicking = false;
-    this.restFrames = 0;
-    this.loop = this.loop.bind(this);
-    requestAnimationFrame(this.loop);
+    this.turnNumber = 1;
+    this._physicsTickAccum = 0;
+
+    this.db = null;
+    this.gameId = null;
+
+    this._bindEvents();
+    this._initPhysics();
+
+    this.renderer.setGameState(this.currentPlayer, this.turnNumber, this.scoreManager.getScores());
+
+    this.gameLoop = new GameLoop((dt) => this._tick(dt));
+    this.gameLoop.start();
+    eventBus.emit(EVENTS.GAME_STARTED, { playerId: this.currentPlayer, turnNumber: this.turnNumber });
   }
 
-  bindEvents() {
+  async _initPhysics() {
+    this.physics = await PhysicsSync.create(this.board);
+    this.physics.setCollisionResolver(this.damageResolver, this.shockwaveGen);
+    this._initDB();
+  }
+
+  async _initDB() {
+    try {
+      this.db = new ReplayerDB();
+      this.gameId = await this.db.createGame(
+        this.config ? this.config.toJSON() : {},
+        this.board.toJSON()
+      );
+      gameState.setGameId(this.gameId);
+      gameState.setConfig(this.config);
+      log.info(`Game created: ${this.gameId}`);
+    } catch (e) {
+      log.warn('DB init failed:', e);
+    }
+  }
+
+  _bindEvents() {
     this.canvas.addEventListener('mousedown', (e) => {
       if (this.state !== TURN_STATES.SELECT_PIECE) return;
-      if (e.button === 2) return; // Ignore right click for selection
-      
+      if (e.button === 2) return;
       const rect = this.canvas.getBoundingClientRect();
       const scaleX = this.canvas.width / rect.width;
       const scaleY = this.canvas.height / rect.height;
-      const mouseX = (e.clientX - rect.left) * scaleX;
-      const mouseY = (e.clientY - rect.top) * scaleY;
-      
-      // Find clicked piece
-      const pieces = this.board.getAllPieces();
-      for (const piece of pieces) {
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top) * scaleY;
+
+      for (const piece of this.board.getAllPieces()) {
         if (piece.playerId !== this.currentPlayer) continue;
-        
-        const dx = piece.x - mouseX;
-        const dy = piece.y - mouseY;
-        if (Math.sqrt(dx*dx + dy*dy) <= piece.radius) {
-          // Select piece
+        const dx = piece.x - mx;
+        const dy = piece.y - my;
+        if (Math.sqrt(dx * dx + dy * dy) <= piece.radius) {
           this.state = TURN_STATES.DRAW_TRACE;
           this.traceInput.startTrace(piece);
           break;
@@ -70,14 +98,9 @@ export class TurnManager {
     });
 
     this.traceInput.onTraceComplete = (data) => {
-      this.activeCurves = data.curves;
-      this.animatingPieceId = data.pieceId;
-      this.currentCurveIndex = 0;
-      this.curveProgress = 0;
-      this.state = TURN_STATES.ANIMATING_TRACE;
+      this._onTraceComplete(data);
     };
-    
-    // Detect cancellation
+
     const origReset = this.traceInput.reset.bind(this.traceInput);
     this.traceInput.reset = () => {
       origReset();
@@ -87,119 +110,118 @@ export class TurnManager {
     };
   }
 
-  async loop(time) {
-    const deltaMs = time - this.lastTime;
-    this.lastTime = time;
-    
-    if (this.state === TURN_STATES.ANIMATING_TRACE) {
-      await this.updateTraceAnimation(deltaMs);
-    }
-    
-    // Physics ticks continuously in the background
-    if (!this.isPhysicsTicking && this.physics) {
-      this.isPhysicsTicking = true;
-      
-      const beforePieces = new Map(this.board.pieces);
-      
-      const movementDetected = await this.physics.step();
-      this.board.removeDestroyedPieces();
-      
-      for (const [id, piece] of beforePieces.entries()) {
-        if (!this.board.pieces.has(id)) {
-          if (piece.playerId === 1) {
-            this.p2Score += 100;
-            const p2El = document.getElementById('p2-score');
-            if(p2El) p2El.textContent = this.p2Score;
-          } else {
-            this.p1Score += 100;
-            const p1El = document.getElementById('p1-score');
-            if(p1El) p1El.textContent = this.p1Score;
-          }
-        }
-      }
-      
-      this.isPhysicsTicking = false;
-    }
-    
-    this.renderer.render();
-    requestAnimationFrame(this.loop);
+  _onTraceComplete(data) {
+    this.animator.onPiecePosition = (pieceId, x, y) => {
+      const p = this.board.getPiece(pieceId);
+      if (p) { p.x = x; p.y = y; }
+    };
+    this.animator.onFinished = (pieceId, lastCurve) => {
+      this._onAnimationFinished(lastCurve);
+    };
+    this.animator.startAnimation(data.pieceId, data.curves);
+    this.state = TURN_STATES.ANIMATING_TRACE;
   }
 
-  async updateTraceAnimation(deltaMs) {
-    // Advance progress based on current curve's length to maintain constant speed
-    const currentCurve = this.activeCurves[this.currentCurveIndex];
-    if (!currentCurve) {
-      this.finishTraceAnimation();
-      return;
-    }
-    
-    const speed = 300.0; // pixels per second
-    const curveLength = currentCurve.length();
-    const durationMs = (curveLength / speed) * 1000;
-    
-    this.curveProgress += deltaMs / durationMs;
-    
-    if (this.curveProgress >= 1) {
-      this.currentCurveIndex++;
-      this.curveProgress = 0;
-      
-      if (this.currentCurveIndex >= this.activeCurves.length) {
-        await this.finishTraceAnimation(currentCurve);
-        return;
-      }
-    }
-    
-    const activeCrv = this.activeCurves[this.currentCurveIndex];
-    if (activeCrv) {
-      const pt = activeCrv.get(Math.min(1, this.curveProgress));
-      const piece = this.board.getPiece(this.animatingPieceId);
-      if (piece) {
-        piece.x = pt.x;
-        piece.y = pt.y;
-      }
-    }
-  }
-
-  async finishTraceAnimation(lastCurve) {
+  _onAnimationFinished(lastCurve) {
     if (!lastCurve) {
       this.state = TURN_STATES.PHYSICS_RESOLVE;
       return;
     }
-    
-    // Transfer remaining momentum to physics
-    const pt1 = lastCurve.get(0.95);
-    const pt2 = lastCurve.get(1.0);
-    const dx = pt2.x - pt1.x;
-    const dy = pt2.y - pt1.y;
-    
-    const piece = this.board.getPiece(this.animatingPieceId);
-    if(piece) {
-      piece.x = pt2.x;
-      piece.y = pt2.y;
+    const vec = CurveAnimator.getEndVector(lastCurve);
+    const totalLength = CurveAnimator.getTotalLength(this.animator.curves);
+    const lengthMult = CurveAnimator.computeLengthMultiplier(
+      totalLength,
+      GAMEPLAY_DEFAULTS.curveLengthDivisor,
+      GAMEPLAY_DEFAULTS.maxCurveLengthMultiplier
+    );
+
+    const piece = this.board.getPiece(this.animator.pieceId);
+    if (piece) {
+      const endPt = lastCurve.get(1.0);
+      piece.x = endPt.x;
+      piece.y = endPt.y;
+
+      if (piece.type === 'SLINGSHOT') {
+        piece.setCurveLengthMultiplier(totalLength);
+      }
     }
-    
-    // Calculate total energy modifier from multiple curves (Slingshot logic can be hooked here)
-    const totalLength = this.activeCurves.reduce((acc, c) => acc + c.length(), 0);
-    const lengthMultiplier = Math.min(totalLength / 200.0, 5.0); // max 5x multiplier
-    
-    await this.physics.teleportPiece(this.animatingPieceId, pt2.x, pt2.y);
-    await this.physics.applyImpulse(this.animatingPieceId, { x: dx, y: dy }, 5000.0 * lengthMultiplier);
-    
-    // Pieces now bounce infinitely, so end turn immediately
-    this.endTurn();
+
+    const pId = this.animator.pieceId;
+    const endP = lastCurve.get(1.0);
+    this.physics.teleportPiece(pId, endP.x, endP.y);
+    this.physics.applyImpulse(pId, vec.dx, vec.dy, PHYSICS_DEFAULTS.impulseBaseMagnitude * lengthMult);
+
+    this.ghostTrails.addTrail(pId, this.animator.curves, this.currentPlayer);
+    this._recordMove();
+
+    this.state = TURN_STATES.PHYSICS_RESOLVE;
+    this._endTurn();
   }
 
-  endTurn() {
-    this.currentPlayer = this.currentPlayer === 1 ? 2 : 1;
-    this.state = TURN_STATES.SELECT_PIECE;
-    this.animatingPieceId = null;
-    this.activeCurves = null;
-    
-    // Update HUD if we had one tied to an event
-    const p1TurnElement = document.getElementById('turn-indicator');
-    if (p1TurnElement) {
-       p1TurnElement.textContent = `P${this.currentPlayer} Turn`;
-       p1TurnElement.style.color = this.currentPlayer === 1 ? 'var(--accent-cyan)' : 'var(--accent-red)';
+  async _recordMove() {
+    if (!this.db || !this.gameId) return;
+    try {
+      const curveData = this.animator.curves.map(c => ({
+        points: [c.points[0], c.points[1], c.points[2], c.points[3]],
+        length: c.length(),
+      }));
+      await this.db.recordMove(this.gameId, this.turnNumber, this.currentPlayer, this.animator.pieceId, curveData);
+      gameState.addMove({ turnNumber: this.turnNumber, playerId: this.currentPlayer, pieceId: this.animator.pieceId, curves: curveData });
+    } catch (e) {
+      log.warn('Failed to record move:', e);
     }
+  }
+
+  async _tick(deltaMs) {
+    if (this.state === TURN_STATES.ANIMATING_TRACE) {
+      this.animator.update(deltaMs);
+    }
+
+    this._physicsTickAccum += deltaMs;
+    if (this._physicsTickAccum >= PHYSICS_TICK_INTERVAL && this.physics) {
+      this._physicsTickAccum = 0;
+      await this._physicsTick();
+    }
+
+    this.renderer.setGameState(this.currentPlayer, this.turnNumber, this.scoreManager.getScores());
+    this.renderer.render();
+  }
+
+  async _physicsTick() {
+    const movement = await this.physics.step();
+    const destroyed = this.board.removeDestroyedPieces();
+
+    for (const piece of destroyed) {
+      await this.physics.removePiece(piece.id);
+      const killer = piece.playerId === 1 ? 2 : 1;
+      this.scoreManager.onPieceDestroyed(piece, killer);
+      gameState.stats = this.scoreManager.getStats();
+    }
+
+    this.shockwaveGen.update(this.board);
+
+    const p1pieces = this.board.getPlayerPieces(1).length;
+    const p2pieces = this.board.getPlayerPieces(2).length;
+    if (p1pieces === 0 || p2pieces === 0) {
+      const winner = p1pieces > 0 ? 1 : 2;
+      gameState.stats = this.scoreManager.getStats();
+      eventBus.emit(EVENTS.GAME_ENDED, { winner, stats: gameState.stats });
+    }
+  }
+
+  _endTurn() {
+    this.currentPlayer = this.currentPlayer === 1 ? 2 : 1;
+    this.turnNumber++;
+    this.state = TURN_STATES.SELECT_PIECE;
+    eventBus.emit(EVENTS.TURN_CHANGED, { playerId: this.currentPlayer });
+    this.renderer.setGameState(this.currentPlayer, this.turnNumber, this.scoreManager.getScores());
+  }
+
+  destroy() {
+    if (this.gameLoop) this.gameLoop.stop();
+    if (this.traceInput) this.traceInput.destroy();
+    if (this.physics) this.physics.destroy();
+    this.ghostTrails.clear();
+    this.shockwaveGen.clear();
   }
 }

@@ -1,0 +1,221 @@
+{
+  "tasks": [
+    {
+      "id": "INFRA-001",
+      "title": "Silice Ontology Bootstrap",
+      "description": "Create /.silice/ directory with constitution.md, blueprint.md, backlog.json, and codebase.json.",
+      "status": "verified",
+      "affected_modules": [".silice/"]
+    },
+    {
+      "id": "INFRA-002",
+      "title": "Vite Project Setup",
+      "description": "Initialize pnpm Vite project. Add Matter.js, bezier-js, Dexie dependencies. Configure vite.config.js.",
+      "status": "verified",
+      "affected_modules": ["package.json", "vite.config.js", "index.html", ".gitignore"]
+    },
+    {
+      "id": "FEAT-001",
+      "title": "Design System & CSS Foundation",
+      "description": "Implement dark mode design system with CSS custom properties, glassmorphism utilities, micro-animations, and typography (Outfit/Inter).",
+      "status": "verified",
+      "affected_modules": ["src/style.css"]
+    },
+    {
+      "id": "FEAT-002",
+      "title": "Board Topology Generator",
+      "description": "Implement configurable asymmetric board with Anchor Zones (Grid) and Void Expanses.",
+      "status": "verified",
+      "affected_modules": ["src/engine/board/"]
+    },
+    {
+      "id": "FEAT-003",
+      "title": "Piece Model & Type System",
+      "description": "Implement Piece class with type system (BASE, DAMPENER, AMPLIFIER, SLINGSHOT).",
+      "status": "verified",
+      "affected_modules": ["src/engine/pieces/"]
+    },
+    {
+      "id": "FEAT-004",
+      "title": "Physics Engine (Matter.js + Rapier2D dual)",
+      "description": "Dual physics via PhysicsAdapter. Matter.js for dev, Rapier2D/Tauri for production. Auto-detection via IPCDetector.",
+      "status": "verified",
+      "affected_modules": ["src/engine/physics/"]
+    },
+    {
+      "id": "FEAT-005",
+      "title": "Bezier Trace Input System",
+      "description": "Mouse-based cubic Bezier curve drawing with multi-segment support.",
+      "status": "verified",
+      "affected_modules": ["src/engine/trace/"]
+    },
+    {
+      "id": "FEAT-006",
+      "title": "Turn Manager & Game Loop",
+      "description": "State machine managing game flow. Animates piece along Bezier curve, resolves physics, scores.",
+      "status": "verified",
+      "affected_modules": ["src/engine/TurnManager.js", "src/engine/GameLoop.js"]
+    },
+    {
+      "id": "FEAT-007",
+      "title": "Canvas Renderer (modular layers)",
+      "description": "Centralized canvas rendering with separate Board, Piece, Trace, Effects, HUD renderers.",
+      "status": "verified",
+      "affected_modules": ["src/engine/render/"]
+    },
+    {
+      "id": "FEAT-008",
+      "title": "Configuration Screen",
+      "description": "Full-featured board configuration UI. Controls for layout, grid size, cell size, empty space.",
+      "status": "verified",
+      "affected_modules": ["src/ui/ConfigScreen.js"]
+    },
+    {
+      "id": "FEAT-009",
+      "title": "HUD — Heads-Up Display",
+      "description": "In-game overlay: turn indicator, scores, PAUSE button. Updates via EventBus.",
+      "status": "verified",
+      "affected_modules": ["src/ui/GameHUD.js"]
+    },
+    {
+      "id": "FEAT-010",
+      "title": "Integration Room (Post-Game)",
+      "description": "Symmetric text editor for both players. Game statistics panel. Ollama synthesis. Export game record.",
+      "status": "verified",
+      "affected_modules": ["src/ui/IntegrationRoom.js", "src/ai/"]
+    },
+    {
+      "id": "FEAT-011",
+      "title": "Replayer Database (Dexie/IndexedDB)",
+      "description": "Persist game records with IDs, dates, board states, move history. Animated kinetic replayer module.",
+      "status": "verified",
+      "affected_modules": ["src/db/"]
+    },
+    {
+      "id": "FEAT-012",
+      "title": "Application Bootstrap & Screen Router",
+      "description": "Screen state machine: CONFIG -> GAME -> BINDU_PAUSE -> INTEGRATION -> REPLAYER. Wires all modules.",
+      "status": "verified",
+      "affected_modules": ["src/main.js", "src/core/ScreenRouter.js"]
+    },
+    {
+      "id": "ROAD-001",
+      "title": "Tauri Desktop Shell",
+      "description": "Tauri v2 shell with Rust backend, IPC commands, and window configuration.",
+      "status": "verified",
+      "affected_modules": ["src-tauri/"]
+    },
+    {
+      "id": "ROAD-002",
+      "title": "Rust Physics Backend (modular)",
+      "description": "Rapier2D physics engine in Rust with modular structure (types, core, walls, piece, impulse, collision).",
+      "status": "verified",
+      "affected_modules": ["src-tauri/src/physics/"]
+    },
+    {
+      "id": "ROAD-003",
+      "title": "Ollama/Gemma Integration Room AI",
+      "description": "Ollama integration for post-game philosophical synthesis. Graceful degradation when unavailable.",
+      "status": "verified",
+      "affected_modules": ["src/ui/IntegrationRoom.js", "src-tauri/src/ai/", "src/ai/"]
+    },
+    {
+      "id": "ROAD-004",
+      "title": "Rust AST Indexer (modular)",
+      "description": "Tree-sitter based codebase indexer that generates silice/codebase.json Digital Twin.",
+      "status": "verified",
+      "affected_modules": ["tools/silice-indexer/", "silice/codebase.json"]
+    },
+    {
+      "id": "REFACTOR-001",
+      "title": "Atomic File Decomposition — Frontend",
+      "description": "Full modular decomposition: core/, config/, ui/, engine/{board,pieces,trace,animation,physics,collision,scoring,render}/, db/{schema,repositories}/, ai/, utils/. EventBus architecture.",
+      "status": "verified",
+      "affected_modules": ["src/"]
+    },
+    {
+      "id": "REFACTOR-002",
+      "title": "Atomic File Decomposition — Rust Backend",
+      "description": "Split src-tauri/src/ into commands/, physics/ (7 files), ai/ (3 files). Max ~60 lines per file.",
+      "status": "verified",
+      "affected_modules": ["src-tauri/src/"]
+    },
+    {
+      "id": "REFACTOR-003",
+      "title": "silice-indexer decomposition",
+      "description": "Split monolithic main.rs into config.rs, parser.rs, serializer.rs, indexer.rs, main.rs.",
+      "status": "verified",
+      "affected_modules": ["tools/silice-indexer/src/"]
+    },
+    {
+      "id": "FIX-001",
+      "title": "Dual Physics Engine Architecture",
+      "description": "PhysicsAdapter interface with Matter.js fallback and Tauri/Rapier2D production engine. Auto-detection via IPCDetector.",
+      "status": "verified",
+      "affected_modules": ["src/engine/physics/", "src/utils/IPCDetector.js", "package.json"]
+    },
+    {
+      "id": "FIX-002",
+      "title": "Game Loop Throttling",
+      "description": "Physics tick at 50ms intervals instead of every frame. Momentum detection to skip idle ticks.",
+      "status": "verified",
+      "affected_modules": ["src/engine/GameLoop.js", "src/engine/TurnManager.js"]
+    },
+    {
+      "id": "FIX-003",
+      "title": "Collision Damage with Velocity Threshold (Rapier2D)",
+      "description": "Process CollisionEvent::Started with relative velocity check (MIN_IMPACT_VELOCITY=5). Piece-specific onCollision behaviors via DamageResolver on JS side.",
+      "status": "verified",
+      "affected_modules": ["src-tauri/src/physics/collision.rs"]
+    },
+    {
+      "id": "FIX-004",
+      "title": "Tauri Window Size Increase",
+      "description": "Window 1400x900, min 1200x700 to match board dimensions.",
+      "status": "verified",
+      "affected_modules": ["src-tauri/tauri.conf.json"]
+    },
+    {
+      "id": "FIX-005",
+      "title": "silice-indexer edition fix",
+      "description": "Fixed Cargo.toml edition from 2024 (invalid) to 2021 for Rust stable compatibility.",
+      "status": "verified",
+      "affected_modules": ["tools/silice-indexer/Cargo.toml"]
+    },
+    {
+      "id": "ENH-001",
+      "title": "Piece Type Special Behaviors",
+      "description": "Implemented type-specific collision: Dampener damage reduction, Amplifier shockwave, Slingshot curve-length damage multiplier.",
+      "status": "verified",
+      "affected_modules": ["src/engine/pieces/", "src/engine/collision/"]
+    },
+    {
+      "id": "ENH-002",
+      "title": "Ghost Traces & Animated Replay",
+      "description": "GhostTrailRenderer for semi-transparent past traces. ReplayEngine for animating past games from IndexedDB.",
+      "status": "verified",
+      "affected_modules": ["src/engine/animation/", "src/db/ReplayEngine.js", "src/ui/ReplayerScreen.js"]
+    },
+    {
+      "id": "ENH-003",
+      "title": "Integration Room Stats & Export",
+      "description": "Game statistics panel (scores, kills, damage). JSON export button. Ollama fallback via direct HTTP.",
+      "status": "verified",
+      "affected_modules": ["src/ui/IntegrationRoom.js", "src/ai/"]
+    },
+    {
+      "id": "ENH-004",
+      "title": "Board Initialization with Starting Pieces",
+      "description": "Board.generateStartingPieces() creates initial piece distribution across anchor zones.",
+      "status": "verified",
+      "affected_modules": ["src/engine/board/Board.js", "src/main.js"]
+    },
+    {
+      "id": "META-001",
+      "title": "Backlog JSON Synchronization",
+      "description": "All new tasks added, statuses synchronized across codebase changes.",
+      "status": "verified",
+      "affected_modules": ["silice/backlog.json"]
+    }
+  ]
+}

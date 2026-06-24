@@ -1,0 +1,12 @@
+[package]
+name = "silice-indexer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ast-grep-core = "0.44.0"
+ast-grep-language = "0.44.0"
+chrono = "0.4.45"
+ignore = "0.4.26"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"

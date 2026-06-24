@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "bezier-js": "^6.1.4",
-    "dexie": "^3.2.4"
+    "dexie": "^3.2.4",
+    "matter-js": "^0.20.0"
   },
   "devDependencies": {
     "@tauri-apps/api": "^2.11.1",

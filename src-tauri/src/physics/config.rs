@@ -1,0 +1,9 @@
+pub const WALL_THICKNESS: f32 = 50.0;
+pub const WALL_RESTITUTION: f32 = 1.0;
+pub const WALL_FRICTION: f32 = 0.0;
+pub const BODY_LINEAR_DAMPING: f32 = 0.0;
+pub const BODY_ANGULAR_DAMPING: f32 = 0.0;
+pub const COLLIDER_RESTITUTION: f32 = 1.0;
+pub const COLLIDER_FRICTION: f32 = 0.0;
+pub const DAMAGE_PER_COLLISION: f32 = 1.0;
+pub const MIN_IMPACT_VELOCITY: f32 = 5.0;
