@@ -4,6 +4,14 @@ Asynchronous kinetic trajectory strategy — dual-engine physics (Matter.js / Ra
 
 Two players take turns drawing cubic bezier trajectories on a frictionless board. Once launched, a piece bounces perpetually with zero energy loss, colliding with walls and enemy pieces until its HP is depleted. The last player with a surviving piece wins.
 
+## Logo
+
+![Gocurvicnamics](app-icon.png)
+
+## UI
+
+![Game UI](./assets/Gocurvicnamics_Checkpoint_1.JPG)
+
 ---
 
 ## Core Gameplay
