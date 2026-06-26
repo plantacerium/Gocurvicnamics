@@ -28,7 +28,14 @@ export class Board {
   }
 
   generateStartingPieces(countPerZone = PIECE_DEFAULTS.startCountPerZone) {
-    const types = [PIECE_TYPES.BASE, PIECE_TYPES.DAMPENER, PIECE_TYPES.AMPLIFIER, PIECE_TYPES.SLINGSHOT];
+    const types = [
+      PIECE_TYPES.BASE, 
+      PIECE_TYPES.DAMPENER, 
+      PIECE_TYPES.AMPLIFIER, 
+      PIECE_TYPES.SLINGSHOT,
+      PIECE_TYPES.GRAVITON,
+      PIECE_TYPES.PHANTOM
+    ];
     for (const zone of this.anchorZones) {
       if (zone.player === 0) continue;
       for (let i = 0; i < countPerZone; i++) {
@@ -45,9 +52,21 @@ export class Board {
   tryPlacePiece(playerId, type, x, y) {
     const result = this.validator.canPlace(playerId, type, x, y);
     if (result.valid) {
-      this.addPiece(playerId, type, result.snapped.x, result.snapped.y);
+      const piece = this.addPiece(playerId, type, result.snapped.x, result.snapped.y);
+      return { ...result, piece };
     }
     return result;
+  }
+
+  removePieceAt(x, y) {
+    for (const [id, piece] of this.pieces.entries()) {
+      const dist = Math.hypot(piece.x - x, piece.y - y);
+      if (dist <= piece.radius) {
+        this.pieces.delete(id);
+        return true;
+      }
+    }
+    return false;
   }
 
   addPiece(playerId, type, x, y) {

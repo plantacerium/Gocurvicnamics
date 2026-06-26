@@ -9,7 +9,7 @@ export const BOARD_DEFAULTS = {
   maxLayout: 4,
   minGridSize: 3,
   maxGridSize: 10,
-  minCellSize: 40,
+  minCellSize: 50,
   maxCellSize: 100,
   cellSizeStep: 5,
   minEmptySpace: 5,

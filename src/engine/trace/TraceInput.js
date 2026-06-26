@@ -90,10 +90,16 @@ export class TraceInput {
 
   _onKeyDown(e) {
     if (e.key === 'Escape') this.reset();
-    if (e.key === 'Enter' && (
-      this.controller.segments.length > 0 || this.state === TRACE_STATES.CONFIRM
-    )) {
-      this.commit();
+    if (e.key === 'Enter') {
+      if (this.activeCurve) {
+        let end = this.mousePos;
+        let c1 = this.cp1 || end;
+        let c2 = this.cp2 || c1;
+        this.controller.addSegment(this.startPt, c1, c2, end);
+        this.commit();
+      } else if (this.controller.segments.length > 0 || this.state === TRACE_STATES.CONFIRM) {
+        this.commit();
+      }
     }
   }
 

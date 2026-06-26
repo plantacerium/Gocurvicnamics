@@ -25,6 +25,8 @@ export class TurnManager {
     this.config = config;
 
     this.physics = null;
+    this._physicsReady = false;
+    this._pendingPhysicsPieces = null;
     this.traceInput = new TraceInput(canvas);
     this.renderer = new Renderer(canvas, board, this.traceInput);
     this.animator = new AnimationController();
@@ -40,6 +42,8 @@ export class TurnManager {
     this.state = TURN_STATES.SELECT_PIECE;
     this.turnNumber = 1;
     this._physicsTickAccum = 0;
+    this.hasPlacedPieceThisTurn = false;
+    this.selectedHUDPieceType = 'BASE';
 
     this.db = null;
     this.gameId = null;
@@ -57,6 +61,15 @@ export class TurnManager {
   async _initPhysics() {
     this.physics = await PhysicsSync.create(this.board);
     this.physics.setCollisionResolver(this.damageResolver, this.shockwaveGen);
+    this._physicsReady = true;
+    if (this._pendingPhysicsPieces) {
+      for (const piece of this._pendingPhysicsPieces) {
+        if (this.physics.addPiece) {
+          this.physics.addPiece(piece);
+        }
+      }
+      this._pendingPhysicsPieces = null;
+    }
     this._initDB();
   }
 
@@ -92,7 +105,24 @@ export class TurnManager {
         if (Math.sqrt(dx * dx + dy * dy) <= piece.radius) {
           this.state = TURN_STATES.DRAW_TRACE;
           this.traceInput.startTrace(piece);
-          break;
+          return;
+        }
+      }
+
+      // Try placing a piece if not clicked on an existing one
+      if (!this.hasPlacedPieceThisTurn && this.selectedHUDPieceType) {
+        const result = this.board.tryPlacePiece(this.currentPlayer, this.selectedHUDPieceType, mx, my);
+        if (result.valid && result.piece) {
+          if (this._physicsReady) {
+            if (this.physics && this.physics.addPiece) {
+              this.physics.addPiece(result.piece);
+            }
+          } else {
+            if (!this._pendingPhysicsPieces) this._pendingPhysicsPieces = [];
+            this._pendingPhysicsPieces.push(result.piece);
+          }
+          this.hasPlacedPieceThisTurn = true;
+          this.renderer.render(); // Force render to show new piece immediately
         }
       }
     });
@@ -108,6 +138,32 @@ export class TurnManager {
         this.state = TURN_STATES.SELECT_PIECE;
       }
     };
+
+    eventBus.on('BLINK_TELEPORT', (data) => {
+      const { pieceId, playerId } = data;
+      const zones = this.board.anchorZones.filter(z => z.player === playerId);
+      if (zones.length === 0) return;
+      const validZone = zones[Math.floor(Math.random() * zones.length)];
+      const rx = validZone.x + Math.random() * (validZone.cols * validZone.cellSize);
+      const ry = validZone.y + Math.random() * (validZone.rows * validZone.cellSize);
+      if (this.physics) this.physics.teleportPiece(pieceId, rx, ry);
+    });
+
+    eventBus.on('SPAWN_MIRAGE', async (data) => {
+      const { sourceId, x, y, playerId } = data;
+      const piece = this.board.addPiece(playerId, 'MIRAGE', x, y);
+      piece.hp = 1;
+      piece.isFake = true;
+      if (this.physics && this.physics.addPiece) {
+        await this.physics.addPiece(piece);
+        const angle = Math.random() * Math.PI * 2;
+        this.physics.applyImpulse(piece.id, Math.cos(angle), Math.sin(angle), 1500);
+      }
+    });
+
+    eventBus.on('HUD_PIECE_SELECTED', (data) => {
+      this.selectedHUDPieceType = data.type;
+    });
   }
 
   _onTraceComplete(data) {
@@ -150,11 +206,13 @@ export class TurnManager {
     const endP = lastCurve.get(1.0);
     this.physics.teleportPiece(pId, endP.x, endP.y);
     this.physics.applyImpulse(pId, vec.dx, vec.dy, PHYSICS_DEFAULTS.impulseBaseMagnitude * lengthMult);
+    if (piece) piece.launched = true;
+    this.physics.flushStep();
 
     this.ghostTrails.addTrail(pId, this.animator.curves, this.currentPlayer);
     this._recordMove();
 
-    this.state = TURN_STATES.PHYSICS_RESOLVE;
+    // End turn immediately when the piece is put into motion
     this._endTurn();
   }
 
@@ -175,11 +233,60 @@ export class TurnManager {
   async _tick(deltaMs) {
     if (this.state === TURN_STATES.ANIMATING_TRACE) {
       this.animator.update(deltaMs);
+      
+      // Early collision check during trace phase
+      const piece = this.board.getPiece(this.animator.pieceId);
+      if (piece) {
+        let collided = false;
+        
+        // Check collision with other pieces
+        for (const other of this.board.getAllPieces()) {
+          if (other.id === piece.id) continue;
+          const dist = Math.hypot(piece.x - other.x, piece.y - other.y);
+          if (dist < piece.radius + other.radius) {
+            collided = true;
+            break;
+          }
+        }
+        
+        // Check collision with walls
+        if (!collided && piece.type !== 'GHOST') {
+          if (piece.x - piece.radius < 0 || piece.x + piece.radius > this.board.width ||
+              piece.y - piece.radius < 0 || piece.y + piece.radius > this.board.height) {
+            collided = true;
+          }
+        }
+        
+        if (collided) {
+          const vec = this.animator.getCurrentVector();
+          const totalLength = CurveAnimator.getTotalLength(this.animator.curves);
+          
+          this.animator.cancel(); // Abort animation
+          
+          const lengthMult = CurveAnimator.computeLengthMultiplier(
+            totalLength,
+            GAMEPLAY_DEFAULTS.curveLengthDivisor,
+            GAMEPLAY_DEFAULTS.maxCurveLengthMultiplier
+          );
+          
+          if (piece.type === 'SLINGSHOT') {
+            piece.setCurveLengthMultiplier(totalLength);
+          }
+          
+          this.physics.teleportPiece(piece.id, piece.x, piece.y);
+          this.physics.applyImpulse(piece.id, vec.dx, vec.dy, PHYSICS_DEFAULTS.impulseBaseMagnitude * lengthMult);
+          piece.launched = true;
+          this.physics.flushStep();
+          
+          this._recordMove();
+          this._endTurn();
+        }
+      }
     }
 
     this._physicsTickAccum += deltaMs;
     if (this._physicsTickAccum >= PHYSICS_TICK_INTERVAL && this.physics) {
-      this._physicsTickAccum = 0;
+      this._physicsTickAccum -= PHYSICS_TICK_INTERVAL;
       await this._physicsTick();
     }
 
@@ -210,8 +317,13 @@ export class TurnManager {
   }
 
   _endTurn() {
+    for (const piece of this.board.getAllPieces()) {
+      if (piece.isFake) piece.takeDamage(100);
+    }
+
     this.currentPlayer = this.currentPlayer === 1 ? 2 : 1;
     this.turnNumber++;
+    this.hasPlacedPieceThisTurn = false;
     this.state = TURN_STATES.SELECT_PIECE;
     eventBus.emit(EVENTS.TURN_CHANGED, { playerId: this.currentPlayer });
     this.renderer.setGameState(this.currentPlayer, this.turnNumber, this.scoreManager.getScores());

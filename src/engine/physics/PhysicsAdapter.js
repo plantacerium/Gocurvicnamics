@@ -26,6 +26,10 @@ export class PhysicsAdapter {
     throw new Error('PhysicsAdapter#applyImpulse() must be overridden');
   }
 
+  async flushStep() {
+    throw new Error('PhysicsAdapter#flushStep() must be overridden');
+  }
+
   async teleportPiece(pieceId, x, y) {
     throw new Error('PhysicsAdapter#teleportPiece() must be overridden');
   }

@@ -80,8 +80,27 @@ export class PhysicsTauri extends PhysicsAdapter {
     const fy = dy * magnitude * PHYSICS_DEFAULTS.impulseScale;
     try {
       await invoke('apply_impulse', { pieceId, fx, fy });
+      this._movementDetected = true;
     } catch (e) {
       log.warn('apply_impulse failed:', e);
+    }
+  }
+
+  async flushStep() {
+    if (!this._ready) return;
+    try {
+      const updates = await invoke('physics_step');
+      for (const update of updates) {
+        const piece = this.board.getPiece(update.id);
+        if (!piece || piece.destroyed) continue;
+        piece.x = update.x;
+        piece.y = update.y;
+        if (update.hp !== undefined && update.hp < piece.hp) {
+          piece.takeDamage(piece.hp - update.hp);
+        }
+      }
+    } catch (e) {
+      log.warn('flush_step failed:', e);
     }
   }
 

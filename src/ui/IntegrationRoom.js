@@ -15,14 +15,14 @@ export class IntegrationRoom {
   async render() {
     this.container.innerHTML = `
       <div class="glass-panel fade-in" style="display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; height: 100%; border-radius: 0; border: none; pointer-events: auto;">
-        <h2 style="font-size: 2rem; margin-bottom: 20px; color: var(--accent-cyan);">Integration Room</h2>
+        <h2 style="font-size: 2rem; margin-bottom: 20px; color: var(--accent-violet);">Integration Room</h2>
         <div style="display: flex; width: 80%; max-width: 1000px; gap: 20px; margin-bottom: 20px; flex: 1; max-height: 40vh;">
           <div class="glass-panel" style="flex: 1; display: flex; flex-direction: column;">
-            <h3 style="margin-bottom: 10px; color: var(--accent-cyan);">P1 Reflection</h3>
+            <h3 style="margin-bottom: 10px; color: var(--team1-color);">P1 Reflection</h3>
             <textarea id="p1-text" style="flex: 1; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 10px; border-radius: 8px; resize: none; font-family: var(--font-body);"></textarea>
           </div>
           <div class="glass-panel" style="flex: 1; display: flex; flex-direction: column;">
-            <h3 style="margin-bottom: 10px; color: var(--accent-red);">P2 Reflection</h3>
+            <h3 style="margin-bottom: 10px; color: var(--team2-color);">P2 Reflection</h3>
             <textarea id="p2-text" style="flex: 1; background: transparent; border: 1px solid rgba(255,255,255,0.1); color: var(--text-main); padding: 10px; border-radius: 8px; resize: none; font-family: var(--font-body);"></textarea>
           </div>
         </div>
@@ -53,9 +53,9 @@ export class IntegrationRoom {
     const stats = gameState.stats || { scores: { 1: 0, 2: 0 }, kills: { 1: 0, 2: 0 }, damage: { 1: 0, 2: 0 } };
     document.getElementById('stats-panel').innerHTML = `
       <div style="display: flex; justify-content: space-around; text-align: center;">
-        <div><strong style="color: var(--accent-cyan);">P1</strong><br>Score: ${stats.scores[1]}<br>Kills: ${stats.kills[1]}<br>Dmg: ${stats.damage[1]}</div>
+        <div><strong style="color: var(--team1-color);">P1</strong><br>Score: ${stats.scores[1]}<br>Kills: ${stats.kills[1]}<br>Dmg: ${stats.damage[1]}</div>
         <div><strong style="color: var(--text-muted);">vs</strong></div>
-        <div><strong style="color: var(--accent-red);">P2</strong><br>Score: ${stats.scores[2]}<br>Kills: ${stats.kills[2]}<br>Dmg: ${stats.damage[2]}</div>
+        <div><strong style="color: var(--team2-color);">P2</strong><br>Score: ${stats.scores[2]}<br>Kills: ${stats.kills[2]}<br>Dmg: ${stats.damage[2]}</div>
       </div>
     `;
   }

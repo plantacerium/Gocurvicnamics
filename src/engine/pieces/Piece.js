@@ -22,6 +22,7 @@ export class Piece {
     this.color = specs.color;
 
     this.destroyed = false;
+    this.launched = false;
     this.lastCollisionTick = 0;
   }
 

@@ -67,6 +67,15 @@ export class AnimationController {
     return curve.get(Math.min(1, this.progress));
   }
 
+  getCurrentVector() {
+    const curve = this.curves[this.currentCurveIndex];
+    if (!curve) return { dx: 0, dy: 0 };
+    const t = Math.min(1, this.progress);
+    const d = curve.derivative(t);
+    const len = Math.hypot(d.x, d.y) || 1;
+    return { dx: d.x / len, dy: d.y / len };
+  }
+
   cancel() {
     this.isActive = false;
     this.curves = [];
