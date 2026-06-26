@@ -10,8 +10,8 @@ Two players take turns drawing cubic bezier trajectories on a frictionless board
 
 ## UI
 
-![Game UI](./assets/Gocurvicnamics_Checkpoint_1.JPG)
-
+![Start Game UI](./assets/Gocurvicnamics_Checkpoint_3.JPG)
+![Game UI](./assets/Gocurvicnamics_Checkpoint_3_Game.JPG)
 ---
 
 ## Core Gameplay
