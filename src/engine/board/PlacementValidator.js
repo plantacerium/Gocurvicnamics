@@ -1,5 +1,5 @@
 import { GAMEPLAY_DEFAULTS } from '../../config/GameplayConfig.js';
-import { PIECE_DEFAULTS } from '../../config/PieceConfig.js';
+import { PIECE_DEFAULTS, PIECE_SPECS } from '../../config/PieceConfig.js';
 
 export class PlacementValidator {
   constructor(board) {
@@ -11,7 +11,7 @@ export class PlacementValidator {
     if (!zone) return { valid: false, reason: 'out_of_bounds' };
 
     const snapped = zone.snapToCell(x, y);
-    if (this.isCellOccupied(snapped.x, snapped.y)) {
+    if (this.isCellOccupied(snapped.x, snapped.y, null, type)) {
       return { valid: false, reason: 'cell_occupied' };
     }
 
@@ -29,13 +29,18 @@ export class PlacementValidator {
     );
   }
 
-  isCellOccupied(snappedX, snappedY, excludeId = null) {
-    const threshold = PIECE_DEFAULTS.baseRadius * 2;
+  isCellOccupied(snappedX, snappedY, excludeId = null, incomingType = null) {
+    // Use the actual radius of each piece (plus a 20% safety margin) to determine overlap
+    const incomingSpecs = incomingType && PIECE_SPECS[incomingType];
+    const incomingRadius = PIECE_DEFAULTS.baseRadius * (incomingSpecs?.radiusMultiplier || 1.0);
+
     for (const piece of this.board.getAllPieces()) {
       if (excludeId && piece.id === excludeId) continue;
       const dx = piece.x - snappedX;
       const dy = piece.y - snappedY;
-      if (Math.sqrt(dx * dx + dy * dy) < threshold) return true;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const minDist = (piece.radius + incomingRadius) * 1.2; // 20% safety margin
+      if (dist < minDist) return true;
     }
     return false;
   }
