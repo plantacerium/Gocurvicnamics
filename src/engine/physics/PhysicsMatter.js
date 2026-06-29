@@ -1,15 +1,35 @@
 import Matter from 'matter-js';
 import { PhysicsAdapter } from './PhysicsAdapter.js';
 import { PHYSICS_DEFAULTS } from '../../config/PhysicsConfig.js';
+import { PIECE_SPECS } from '../../config/PieceConfig.js';
 import { Logger } from '../../utils/Logger.js';
 
 const log = Logger('PhysicsMatter');
 
 const { Engine, World, Bodies, Body, Events, Vector } = Matter;
 
-const WALL_CATEGORY = 0x0001;
+const WALL_CATEGORY    = 0x0001;
 const DEFAULT_CATEGORY = 0x0002;
-const GHOST_CATEGORY = 0x0004;
+const GHOST_CATEGORY   = 0x0004;
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Returns the PIECE_SPECS physics entry for a piece, with safe defaults. */
+function pieceSpecs(piece) {
+  return PIECE_SPECS[piece.type] || {
+    restitution: 1.0, speed: 1.0, curvature: 0.0, curveDir: 0,
+    massInteraction: 1.0, spinFactor: 0.0, blink: false,
+  };
+}
+
+/** Rotate a 2-D vector by `angle` radians. */
+function rotateVec(v, angle) {
+  const c = Math.cos(angle);
+  const s = Math.sin(angle);
+  return { x: v.x * c - v.y * s, y: v.x * s + v.y * c };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export class PhysicsMatter extends PhysicsAdapter {
   async initialize() {
@@ -17,15 +37,17 @@ export class PhysicsMatter extends PhysicsAdapter {
       gravity: { x: 0, y: 0 },
       enableSleeping: false,
     });
-    
-    // Crucial for infinite movement: prevent engine from forcing objects to rest
-    Matter.Resolver._restingThresh = 0.001;
+
+    // Prevent Matter.js from forcing bodies to rest
+    Matter.Resolver._restingThresh        = 0.001;
     Matter.Resolver._restingThreshSquared = 0.000001;
 
-    this._walls = [];
-    this._bodyMap = new Map();
+    this._walls          = [];
+    this._bodyMap        = new Map();
     this._collisionQueue = [];
-    this._ready = true;
+    // Per-piece curve-direction memory (chaos pieces: random dir, kept stable per launch)
+    this._curveDirState  = new Map();
+    this._ready          = true;
 
     Events.on(this._engine, 'collisionStart', (event) => {
       for (const pair of event.pairs) {
@@ -33,7 +55,7 @@ export class PhysicsMatter extends PhysicsAdapter {
       }
     });
 
-    log.info('Matter.js engine initialized');
+    log.info('Matter.js particle-collider engine initialized');
     return true;
   }
 
@@ -44,14 +66,26 @@ export class PhysicsMatter extends PhysicsAdapter {
     for (const piece of this.board.getAllPieces()) {
       this._addMatterBody(piece);
     }
+
+    // After adding all bodies, Matter.js may have computed penetration forces for
+    // overlapping pieces. Reset ALL velocities immediately so no piece moves
+    // until explicitly launched by the player.
+    for (const body of this._bodyMap.values()) {
+      Body.setVelocity(body, { x: 0, y: 0 });
+      Body.setAngularVelocity(body, 0);
+    }
+    // Also flush any queued collision events that may have fired during add
+    this._collisionQueue = [];
+
     log.debug(`Synced ${this.board.getAllPieces().length} pieces to Matter.js`);
   }
 
   _clearWorld() {
     World.clear(this._engine.world, false);
     this._bodyMap.clear();
-    this._walls = [];
+    this._walls          = [];
     this._collisionQueue = [];
+    this._curveDirState.clear();
   }
 
   _createWalls() {
@@ -60,40 +94,43 @@ export class PhysicsMatter extends PhysicsAdapter {
     const h = this.board.height;
     const wallOpts = {
       isStatic: true,
-      restitution: PHYSICS_DEFAULTS.restitution,
-      friction: PHYSICS_DEFAULTS.friction,
+      restitution: 1.0,
+      friction: 0,
       frictionStatic: 0,
       frictionAir: 0,
-      collisionFilter: {
-        category: WALL_CATEGORY,
-        mask: 0xFFFFFFFF
-      }
+      collisionFilter: { category: WALL_CATEGORY, mask: 0xFFFFFFFF },
     };
     this._walls = [
-      Bodies.rectangle(w / 2, -t / 2, w + t * 2, t, wallOpts),
+      Bodies.rectangle(w / 2, -t / 2,    w + t * 2, t, wallOpts),
       Bodies.rectangle(w / 2, h + t / 2, w + t * 2, t, wallOpts),
-      Bodies.rectangle(-t / 2, h / 2, t, h + t * 2, wallOpts),
+      Bodies.rectangle(-t / 2, h / 2,    t, h + t * 2, wallOpts),
       Bodies.rectangle(w + t / 2, h / 2, t, h + t * 2, wallOpts),
     ];
     World.add(this._engine.world, this._walls);
   }
 
   _addMatterBody(piece) {
+    const sp      = pieceSpecs(piece);
     const isGhost = piece.type === 'GHOST';
     const body = Bodies.circle(piece.x, piece.y, piece.radius, {
-      restitution: PHYSICS_DEFAULTS.restitution,
-      friction: PHYSICS_DEFAULTS.friction,
-      frictionAir: PHYSICS_DEFAULTS.frictionAir,
+      restitution:    sp.restitution,
+      friction:       0,
+      frictionAir:    0,
       frictionStatic: 0,
       density: piece.mass / (Math.PI * piece.radius * piece.radius),
       label: piece.id,
       collisionFilter: {
-        category: isGhost ? GHOST_CATEGORY : DEFAULT_CATEGORY,
-        mask: isGhost ? (0xFFFFFFFF ^ WALL_CATEGORY) : 0xFFFFFFFF
-      }
+        category: isGhost ? GHOST_CATEGORY   : DEFAULT_CATEGORY,
+        mask:     isGhost ? (0xFFFFFFFF ^ WALL_CATEGORY) : 0xFFFFFFFF,
+      },
     });
     World.add(this._engine.world, body);
     this._bodyMap.set(piece.id, body);
+
+    // Initialise curve direction for chaos pieces
+    if (sp.curveDir === 0 && sp.curvature > 0) {
+      this._curveDirState.set(piece.id, Math.random() < 0.5 ? 1 : -1);
+    }
   }
 
   async step() {
@@ -107,45 +144,58 @@ export class PhysicsMatter extends PhysicsAdapter {
       const body = this._bodyMap.get(piece.id);
       if (!body) continue;
 
-      // Non-launched pieces stay pinned unless hit by a launched piece this frame
+      // Non-launched, un-hit pieces stay perfectly pinned
       if (!piece.launched && !collidedIds.has(piece.id)) {
         Body.setPosition(body, { x: piece.x, y: piece.y });
         Body.setVelocity(body, { x: 0, y: 0 });
         continue;
       }
 
-      if (Math.abs(body.velocity.x) > this._momentumThreshold || Math.abs(body.velocity.y) > this._momentumThreshold) {
-        movement = true;
+      const sp = pieceSpecs(piece);
+
+      // ── Curvature / Magnus effect ─────────────────────────────────────────
+      if (sp.curvature > 0) {
+        let dir = sp.curveDir;
+        if (dir === 0) {
+          dir = this._curveDirState.get(piece.id) || 1;
+        }
+        const rotated = rotateVec(body.velocity, sp.curvature * dir);
+        Body.setVelocity(body, rotated);
       }
 
-      // Ghost wrap
+      // ── Ghost wrap ────────────────────────────────────────────────────────
       if (piece.type === 'GHOST') {
-        let wrapped = false;
         let nx = body.position.x;
         let ny = body.position.y;
-        if (nx < 0) { nx = this.board.width; wrapped = true; }
-        else if (nx > this.board.width) { nx = 0; wrapped = true; }
-        if (ny < 0) { ny = this.board.height; wrapped = true; }
-        else if (ny > this.board.height) { ny = 0; wrapped = true; }
+        let wrapped = false;
+        if (nx < 0)                      { nx = this.board.width;  wrapped = true; }
+        else if (nx > this.board.width)  { nx = 0;                 wrapped = true; }
+        if (ny < 0)                      { ny = this.board.height; wrapped = true; }
+        else if (ny > this.board.height) { ny = 0;                 wrapped = true; }
         if (wrapped) Body.setPosition(body, { x: nx, y: ny });
       }
 
-      // Preserve infinite movement: ensure launched pieces never stop
+      // ── Speed floor — infinite movement guarantee ─────────────────────────
       if (piece.launched) {
-        const speed = Vector.magnitude(body.velocity);
-        if (speed < 1.5) {
-          if (speed > 0.01) {
-            const norm = Vector.normalise(body.velocity);
-            Body.setVelocity(body, Vector.mult(norm, 2.0));
+        const minSpeed = 1.5 * sp.speed;
+        const curSpeed = Vector.magnitude(body.velocity);
+        if (curSpeed < minSpeed) {
+          if (curSpeed > 0.01) {
+            Body.setVelocity(body, Vector.mult(Vector.normalise(body.velocity), minSpeed));
           } else {
-            const angle = Math.random() * Math.PI * 2;
-            Body.setVelocity(body, { x: Math.cos(angle) * 2.0, y: Math.sin(angle) * 2.0 });
+            const a = Math.random() * Math.PI * 2;
+            Body.setVelocity(body, { x: Math.cos(a) * minSpeed, y: Math.sin(a) * minSpeed });
           }
         }
       }
 
-      piece.x = body.position.x;
-      piece.y = body.position.y;
+      if (Math.abs(body.velocity.x) > this._momentumThreshold ||
+          Math.abs(body.velocity.y) > this._momentumThreshold) {
+        movement = true;
+      }
+
+      piece.x  = body.position.x;
+      piece.y  = body.position.y;
       piece.vx = body.velocity.x;
       piece.vy = body.velocity.y;
     }
@@ -154,63 +204,129 @@ export class PhysicsMatter extends PhysicsAdapter {
     return movement;
   }
 
+  // ── Particle Collider ──────────────────────────────────────────────────────
   _resolveCollisions() {
     const collidedIds = new Set();
+
     while (this._collisionQueue.length > 0) {
-      const pair = this._collisionQueue.shift();
+      const pair  = this._collisionQueue.shift();
       const bodyA = pair.bodyA;
       const bodyB = pair.bodyB;
 
       collidedIds.add(bodyA.label);
       collidedIds.add(bodyB.label);
 
-      const isWallA = bodyA.isStatic;
-      const isWallB = bodyB.isStatic;
+      // ── Wall collision ─────────────────────────────────────────────────────
+      if (bodyA.isStatic || bodyB.isStatic) {
+        const movingBody = bodyA.isStatic ? bodyB : bodyA;
+        const piece      = this.board.getPiece(movingBody.label);
+        if (!piece) continue;
+        const sp = pieceSpecs(piece);
 
-      if (isWallA || isWallB) {
-        const movingBody = isWallA ? bodyB : bodyA;
-        const piece = this.board.getPiece(movingBody.label);
-        if (piece && piece.type === 'WISP') {
-          Body.setVelocity(movingBody, { x: movingBody.velocity.x * 1.1, y: movingBody.velocity.y * 1.1 });
+        // Re-randomise curve direction on wall bounce for chaos pieces
+        if (sp.curveDir === 0 && sp.curvature > 0) {
+          this._curveDirState.set(piece.id, Math.random() < 0.5 ? 1 : -1);
+        }
+        // WISP accelerates on wall contact
+        if (piece.type === 'WISP') {
+          Body.setVelocity(movingBody, Vector.mult(movingBody.velocity, 1.1));
         }
         continue;
       }
 
+      // ── Piece-vs-piece collision ───────────────────────────────────────────
       const pieceA = this.board.getPiece(bodyA.label);
       const pieceB = this.board.getPiece(bodyB.label);
       if (!pieceA || !pieceB) continue;
 
-      const diff = Vector.sub(bodyA.position, bodyB.position);
-      const dist = Math.max(Vector.magnitude(diff), 0.1);
-      const normal = Vector.mult(diff, 1 / dist);
-      const bump = 6.0;
+      // CRITICAL: If neither piece has been launched yet, this is a start-of-game
+      // penetration artifact from Matter.js resolving overlapping bodies.
+      // Ignore it completely — pieces must stay pinned until explicitly launched.
+      if (!pieceA.launched && !pieceB.launched) continue;
 
-      Body.setVelocity(bodyA, Vector.add(bodyA.velocity, Vector.mult(normal, bump)));
-      Body.setVelocity(bodyB, Vector.add(bodyB.velocity, Vector.mult(normal, -bump)));
+      const spA = pieceSpecs(pieceA);
+      const spB = pieceSpecs(pieceB);
 
-      if (pieceA.playerId === pieceB.playerId) continue;
+      // --- Separation normal & tangent ---
+      const diff    = Vector.sub(bodyA.position, bodyB.position);
+      const dist    = Math.max(Vector.magnitude(diff), 0.1);
+      const normal  = Vector.mult(diff, 1 / dist);
+      const tangent = { x: -normal.y, y: normal.x };
 
-      const relVel = Vector.magnitude(
-        Vector.sub(bodyA.velocity, bodyB.velocity)
-      );
+      // --- Impact speed ---
+      const relVelA    = Vector.dot(bodyA.velocity, normal);
+      const relVelB    = Vector.dot(bodyB.velocity, normal);
+      const impactSpeed = Math.abs(relVelA - relVelB);
 
-      if (this._collisionResolver) {
-        const result = this._collisionResolver.resolve(pieceA, pieceB, relVel);
-        if (result.shockwave && this._shockwaveGen) {
-          this._shockwaveGen.emit(
-            result.shockwavePos.x,
-            result.shockwavePos.y,
-            result.shockwaveRadius,
-            result.shockwaveForce
-          );
-        }
-      } else {
-        if (relVel > PHYSICS_DEFAULTS.minImpactForDamage) {
+      // --- Particle collider formula ---
+      // Combined restitution (geometric mean keeps energy calculation stable)
+      const combinedRestitution = Math.sqrt(spA.restitution * spB.restitution);
+
+      // Impulse: each piece is pushed back proportional to the OTHER's massInteraction
+      const impulseA = impactSpeed * spB.massInteraction * combinedRestitution;
+      const impulseB = impactSpeed * spA.massInteraction * combinedRestitution;
+
+      let velA = Vector.add(bodyA.velocity, Vector.mult(normal,  impulseA));
+      let velB = Vector.add(bodyB.velocity, Vector.mult(normal, -impulseB));
+
+      // --- Spin / lateral kick ---
+      const combinedSpin = (spA.spinFactor + spB.spinFactor) * 0.5;
+      if (combinedSpin > 0) {
+        const spinSign  = Math.random() < 0.5 ? 1 : -1;
+        const spinKickA = impactSpeed * combinedSpin * spA.spinFactor * spinSign;
+        const spinKickB = impactSpeed * combinedSpin * spB.spinFactor * -spinSign;
+        velA = Vector.add(velA, Vector.mult(tangent, spinKickA));
+        velB = Vector.add(velB, Vector.mult(tangent, spinKickB));
+      }
+
+      // Re-randomise curve direction for chaos pieces on each piece collision
+      if (spA.curveDir === 0 && spA.curvature > 0) {
+        this._curveDirState.set(pieceA.id, Math.random() < 0.5 ? 1 : -1);
+      }
+      if (spB.curveDir === 0 && spB.curvature > 0) {
+        this._curveDirState.set(pieceB.id, Math.random() < 0.5 ? 1 : -1);
+      }
+
+      // --- BLINK teleport (100 px forward, then continue) ---
+      if (spA.blink && pieceA.launched) {
+        const dir = Vector.magnitude(velA) > 0.01 ? Vector.normalise(velA) : normal;
+        Body.setPosition(bodyA, {
+          x: bodyA.position.x + dir.x * 100,
+          y: bodyA.position.y + dir.y * 100,
+        });
+      }
+      if (spB.blink && pieceB.launched) {
+        const dir = Vector.magnitude(velB) > 0.01 ? Vector.normalise(velB) : Vector.mult(normal, -1);
+        Body.setPosition(bodyB, {
+          x: bodyB.position.x + dir.x * 100,
+          y: bodyB.position.y + dir.y * 100,
+        });
+      }
+
+      Body.setVelocity(bodyA, velA);
+      Body.setVelocity(bodyB, velB);
+
+      // Mark hit (stationary) pieces as launched so they keep moving
+      pieceA.launched = true;
+      pieceB.launched = true;
+
+      // --- Damage (only cross-player) ---
+      if (pieceA.playerId !== pieceB.playerId) {
+        if (this._collisionResolver) {
+          const result = this._collisionResolver.resolve(pieceA, pieceB, impactSpeed);
+          if (result.shockwave && this._shockwaveGen) {
+            this._shockwaveGen.emit(
+              result.shockwavePos.x, result.shockwavePos.y,
+              result.shockwaveRadius, result.shockwaveForce,
+            );
+          }
+        } else if (impactSpeed > PHYSICS_DEFAULTS.minImpactForDamage) {
           pieceA.takeDamage(PHYSICS_DEFAULTS.damagePerCollision);
           pieceB.takeDamage(PHYSICS_DEFAULTS.damagePerCollision);
         }
       }
     }
+
     return collidedIds;
   }
 
@@ -226,11 +342,21 @@ export class PhysicsMatter extends PhysicsAdapter {
         Body.setVelocity(body, { x: 0, y: 0 });
         continue;
       }
-      piece.x = body.position.x;
-      piece.y = body.position.y;
+      piece.x  = body.position.x;
+      piece.y  = body.position.y;
       piece.vx = body.velocity.x;
       piece.vy = body.velocity.y;
     }
+  }
+
+  async applyImpulse(pieceId, dx, dy, magnitude) {
+    if (!this._ready) return;
+    const body  = this._bodyMap.get(pieceId);
+    const piece = this.board.getPiece(pieceId);
+    if (!body || !piece) return;
+    const sp = pieceSpecs(piece);
+    const scaledMag = magnitude * sp.speed;
+    Body.setVelocity(body, { x: dx * scaledMag, y: dy * scaledMag });
   }
 
   async teleportPiece(pieceId, x, y) {
@@ -261,8 +387,9 @@ export class PhysicsMatter extends PhysicsAdapter {
       Engine.clear(this._engine);
     }
     this._bodyMap.clear();
-    this._walls = [];
+    this._walls          = [];
     this._collisionQueue = [];
+    this._curveDirState.clear();
     this._ready = false;
     super.destroy();
   }
