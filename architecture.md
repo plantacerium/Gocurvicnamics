@@ -46,7 +46,8 @@ Gocurvicnamics/
 │   ├── engine/                               # Core game engine
 │   │   ├── GameLoop.js                       # requestAnimationFrame wrapper
 │   │   ├── SetupManager.js                   # Board layout + manual piece placement
-│   │   ├── TurnManager.js                    # State machine (SELECT→DRAW→ANIMATE→PHYSICS)
+│   │   ├── TurnManager.js                    # Legacy state machine (for async turn-based play)
+│   │   ├── ActionManager.js                  # Real-Time state machine & Pointer ID tracker
 │   │   │
 │   │   ├── animation/                        # Visual animation subsystem
 │   │   │   ├── AnimationController.js        # Orchestrates trace→position animation
@@ -78,7 +79,9 @@ Gocurvicnamics/
 │   │   │   ├── BasePiece.js                  # Standard: onCollision → 1 dmg if relVel>5
 │   │   │   ├── DampenerPiece.js              # Heavy: onCollision → 1 dmg if relVel>8
 │   │   │   ├── AmplifierPiece.js             # Suicide: deals HP as dmg + shockwave
-│   │   │   └── SlingshotPiece.js             # Kinetic: damage × curveLengthMultiplier
+│   │   │   ├── SlingshotPiece.js             # Kinetic: damage × curveLengthMultiplier
+│   │   │   ├── GravitonPiece.js              # Anchor: High mass, absorbs heavy hits
+│   │   │   └── PhantomPiece.js               # Phase: 0 damage if relVel>10.0
 │   │   │
 │   │   ├── render/                           # Canvas rendering (single context)
 │   │   │   ├── Renderer.js                   # Central orchestrator: calls sub-renderers
@@ -336,21 +339,27 @@ stateDiagram-v2
 - `INTEGRATION` → `IntegrationRoom` — post-game stats + AI reflections
 - `REPLAYER` → `ReplayerScreen` — match replay via `ReplayEngine`
 
-### 3.2 Turn Manager
+### 3.2 Action & Turn Management
 
 ```mermaid
 stateDiagram-v2
-    [*] --> SELECT_PIECE
-    SELECT_PIECE --> DRAW_TRACE: Click owned piece
-    DRAW_TRACE --> DRAW_TRACE: Add Bezier Segment (CP1→CP2→End)
-    DRAW_TRACE --> ANIMATING_TRACE: Enter (Commit)
-    DRAW_TRACE --> SELECT_PIECE: Esc (Cancel)
-    ANIMATING_TRACE --> PHYSICS_RESOLVE: Animation ends
-    PHYSICS_RESOLVE --> SELECT_PIECE: End turn (switch player)
+    [*] --> SELECT_PIECE: Pointer down on HUD
+    SELECT_PIECE --> TRACE_DRAW: Pointer down on valid board Grid
+    TRACE_DRAW --> TRACE_DRAW: Drag to draw Bezier Segment
+    TRACE_DRAW --> LAUNCH: Pointer up (Commit)
+    LAUNCH --> GUIDED_PATH: Piece traces path via setVelocity
+    GUIDED_PATH --> PHYSICS_RESOLVE: Path ends or collision
     PHYSICS_RESOLVE --> [*]: All pieces of one player destroyed
 ```
 
-The physics loop runs continuously at `PHYSICS_TICK_INTERVAL = 50ms` regardless of turn state. Between turns, pieces already in motion continue bouncing and colliding.
+The game operates primarily in a real-time hot-seat model managed by `ActionManager.js`:
+- **Pointer ID Tracking**: Multi-touch and multi-cursor support is achieved by mapping `pointerId`s to specific teams when interacting with the HUD. This allows true simultaneous play without global turn blocking.
+- **Strict Grid Constraints**: The `PlacementValidator` ensures pieces can only be spawned mathematically centered on their respective colored Anchor Zones.
+- **Guided Missile Physics**: During `GUIDED_PATH`, the `PhysicsMatter` adapter steers the piece by continuously updating its velocity towards the drawn curve's target points, allowing it to seamlessly collide with obstacles via continuous collision detection.
+
+*(The legacy `TurnManager.js` handles strictly asynchronous state transitions when required by specific game modes.)*
+
+The physics loop runs continuously at `PHYSICS_TICK_INTERVAL = 50ms` regardless of input state. Between actions, pieces already in motion continue bouncing and colliding indefinitely.
 
 ---
 

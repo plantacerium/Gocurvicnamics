@@ -6,14 +6,14 @@ export class GameHUD {
   constructor(container, router) {
     this.container = container;
     this.router = router;
-    this.selectedPieceType = 'BASE';
+    this.selectedPieces = { 1: 'BASE', 2: 'BASE' };
     this._unsubs = [];
     this._bindEvents();
   }
 
-  render(currentPlayer, scores) {
-    const isP1 = currentPlayer === 1;
-    const teamColor = isP1 ? 'var(--team1-color)' : 'var(--team2-color)';
+  render(scores = {1:0, 2:0}) {
+    const p1Score = scores[1] || 0;
+    const p2Score = scores[2] || 0;
 
     const imgMap = {
       BASE: 'assets/stones/piece_1_base_1782403856623.png',
@@ -42,9 +42,9 @@ export class GameHUD {
           const specs = PIECE_SPECS[t];
           const label = specs?.label || t;
           const imgSrc = imgMap[t] || imgMap.BASE;
-          const isSelected = t === this.selectedPieceType && isP1;
+          const isSelected = t === this.selectedPieces[1];
           return `
-            <div class="hud-piece-card ${isSelected ? 'selected' : ''}" data-type="${t}" data-player="1" style="width: 50px; height: 60px; display: flex; flex-direction: column; align-items: center; cursor: pointer; background: rgba(255,255,255,0.05); padding: 4px; border: 2px solid ${isSelected ? 'var(--team1-color)' : 'transparent'}; border-radius: 8px; transition: all 0.2s; opacity: ${isP1 ? 1 : 0.4}; pointer-events: ${isP1 ? 'auto' : 'none'};">
+            <div class="hud-piece-card ${isSelected ? 'selected' : ''}" data-type="${t}" data-player="1" style="width: 50px; height: 60px; display: flex; flex-direction: column; align-items: center; cursor: pointer; background: rgba(255,255,255,0.05); padding: 4px; border: 2px solid ${isSelected ? 'var(--team1-color)' : 'transparent'}; border-radius: 8px; transition: all 0.2s; pointer-events: auto;">
               <img src="${imgSrc}" style="width: 35px; height: 35px; object-fit: contain; margin-bottom: 2px; pointer-events: none;" />
               <span style="font-size: 0.55rem; color: var(--text-main); pointer-events: none; text-align: center; line-height: 1;">${label}</span>
             </div>
@@ -59,9 +59,9 @@ export class GameHUD {
           const specs = PIECE_SPECS[t];
           const label = specs?.label || t;
           const imgSrc = imgMap[t] || imgMap.BASE;
-          const isSelected = t === this.selectedPieceType && !isP1;
+          const isSelected = t === this.selectedPieces[2];
           return `
-            <div class="hud-piece-card ${isSelected ? 'selected' : ''}" data-type="${t}" data-player="2" style="width: 50px; height: 60px; display: flex; flex-direction: column; align-items: center; cursor: pointer; background: rgba(255,255,255,0.05); padding: 4px; border: 2px solid ${isSelected ? 'var(--team2-color)' : 'transparent'}; border-radius: 8px; transition: all 0.2s; opacity: ${!isP1 ? 1 : 0.4}; pointer-events: ${!isP1 ? 'auto' : 'none'};">
+            <div class="hud-piece-card ${isSelected ? 'selected' : ''}" data-type="${t}" data-player="2" style="width: 50px; height: 60px; display: flex; flex-direction: column; align-items: center; cursor: pointer; background: rgba(255,255,255,0.05); padding: 4px; border: 2px solid ${isSelected ? 'var(--team2-color)' : 'transparent'}; border-radius: 8px; transition: all 0.2s; pointer-events: auto;">
               <img src="${imgSrc}" style="width: 35px; height: 35px; object-fit: contain; margin-bottom: 2px; pointer-events: none;" />
               <span style="font-size: 0.55rem; color: var(--text-main); pointer-events: none; text-align: center; line-height: 1;">${label}</span>
             </div>
@@ -72,12 +72,11 @@ export class GameHUD {
       <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 20px 40px; display: flex; flex-direction: column; align-items: center; pointer-events: none;">
         <div style="display: flex; justify-content: space-between; align-items: flex-end; width: 100%;">
           <div class="glass-panel" style="padding: 12px 24px; font-weight: bold; color: var(--text-main); border: 1px solid rgba(255,255,255,0.05); background: rgba(20, 24, 30, 0.4); border-radius: 12px; display: flex; gap: 20px;">
-            <span style="color: var(--team1-color);" id="turn-indicator">P1 Turn</span>
-
+            <span style="color: var(--accent-violet);" id="turn-indicator">REAL-TIME</span>
           <span style="color: rgba(255,255,255,0.3);">|</span>
-          <span style="color: var(--team1-color);">P1 Score: <span id="p1-score">${scores[1] || 0}</span></span>
+          <span style="color: var(--team1-color);">P1 Score: <span id="p1-score">${p1Score}</span></span>
           <span style="color: rgba(255,255,255,0.3);">|</span>
-          <span style="color: var(--team2-color);">P2 Score: <span id="p2-score">${scores[2] || 0}</span></span>
+          <span style="color: var(--team2-color);">P2 Score: <span id="p2-score">${p2Score}</span></span>
           </div>
           <button id="btn-pause" class="glass-panel" style="padding: 12px 24px; background: rgba(51, 102, 255, 0.15); border: 1px solid rgba(51, 102, 255, 0.3); color: var(--text-main); pointer-events: auto; border-radius: 12px; transition: all 0.3s ease;">
             BINDÚ (Pause)
@@ -85,7 +84,6 @@ export class GameHUD {
         </div>
       </div>
     `;
-    this._updateTurnIndicator(currentPlayer);
     this._bindPieceSelection();
     document.getElementById('btn-pause').addEventListener('click', () => {
       this.router.navigate(SCREENS.BINDU_PAUSE);
@@ -100,38 +98,18 @@ export class GameHUD {
   }
 
   updateTurn(playerId) {
-    this._updateTurnIndicator(playerId);
-  }
-
-  _updateTurnIndicator(playerId) {
-    const el = document.getElementById('turn-indicator');
-    if (!el) return;
-    el.textContent = `P${playerId} Turn`;
-    const color = playerId === 1 ? 'var(--team1-color)' : 'var(--team2-color)';
-    el.style.color = color;
-    
-    // Update pointer events and opacity based on whose turn it is
-    document.querySelectorAll('.hud-piece-card').forEach(card => {
-       const cardPlayer = parseInt(card.getAttribute('data-player'), 10);
-       if (cardPlayer === playerId) {
-         card.style.opacity = '1';
-         card.style.pointerEvents = 'auto';
-       } else {
-         card.style.opacity = '0.4';
-         card.style.pointerEvents = 'none';
-         card.classList.remove('selected');
-         card.style.borderColor = 'transparent';
-       }
-    });
+    // No-op for real-time
   }
 
   _bindPieceSelection() {
     document.querySelectorAll('.hud-piece-card').forEach(btn => {
-      btn.addEventListener('click', (e) => {
+      btn.addEventListener('pointerdown', (e) => {
+        // Prevent default to avoid synthetic mouse events firing if using touch
+        e.preventDefault();
+        
         const target = e.currentTarget;
         const player = target.getAttribute('data-player');
         
-        // Only allow selecting from the active player's side
         document.querySelectorAll(`.hud-piece-card[data-player="${player}"]`).forEach(b => {
           b.classList.remove('selected');
           b.style.borderColor = 'transparent';
@@ -139,20 +117,23 @@ export class GameHUD {
         });
         target.classList.add('selected');
         target.style.background = 'rgba(255, 255, 255, 0.2)';
-        this.selectedPieceType = target.getAttribute('data-type');
+        this.selectedPieces[player] = target.getAttribute('data-type');
         
         const color = player === '1' ? 'var(--team1-color)' : 'var(--team2-color)';
         target.style.borderColor = color;
         
-        eventBus.emit('HUD_PIECE_SELECTED', { type: this.selectedPieceType });
+        eventBus.emit('HUD_PIECE_SELECTED', { 
+          type: this.selectedPieces[player], 
+          player: parseInt(player, 10),
+          pointerId: e.pointerId 
+        });
       });
     });
   }
 
   _bindEvents() {
     this._unsubs.push(
-      eventBus.on(EVENTS.SCORE_CHANGED, (data) => this.updateScores(data.total)),
-      eventBus.on(EVENTS.TURN_CHANGED, (data) => this.updateTurn(data.playerId))
+      eventBus.on(EVENTS.SCORE_CHANGED, (data) => this.updateScores(data.total))
     );
   }
 

@@ -5,7 +5,7 @@ export class HUDCanvasRenderer {
     this.ctx = ctx;
   }
 
-  render(turnNumber, currentPlayer, scores, board) {
+  render(scores = {1:0, 2:0}, board) {
     const ctx = this.ctx;
     ctx.save();
     
@@ -18,12 +18,12 @@ export class HUDCanvasRenderer {
     ctx.fill();
     ctx.stroke();
 
-    // Turn info
+    // Game Mode info
     ctx.font = 'bold 16px var(--font-display, Outfit, sans-serif)';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
-    ctx.fillText(`Turn ${turnNumber}`, 25, 25);
+    ctx.fillStyle = 'var(--accent-violet)';
+    ctx.fillText(`REAL-TIME KINETIC`, 25, 25);
 
     // Get piece counts
     let p1Pieces = 0;
@@ -35,18 +35,16 @@ export class HUDCanvasRenderer {
     }
 
     // Player 1
-    const p1Active = currentPlayer === 1;
-    ctx.fillStyle = p1Active ? 'rgba(255, 51, 51, 1)' : 'rgba(255, 51, 51, 0.5)';
-    ctx.font = p1Active ? 'bold 14px var(--font-body, Inter, sans-serif)' : '14px var(--font-body, Inter, sans-serif)';
+    ctx.fillStyle = 'rgba(255, 51, 51, 1)';
+    ctx.font = 'bold 14px var(--font-body, Inter, sans-serif)';
     ctx.fillText(`P1 Score: ${scores[1] || 0}`, 25, 55);
     ctx.font = '12px var(--font-body, Inter, sans-serif)';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
     ctx.fillText(`Pieces: ${p1Pieces}`, 130, 56);
 
     // Player 2
-    const p2Active = currentPlayer === 2;
-    ctx.fillStyle = p2Active ? 'rgba(51, 102, 255, 1)' : 'rgba(51, 102, 255, 0.5)';
-    ctx.font = p2Active ? 'bold 14px var(--font-body, Inter, sans-serif)' : '14px var(--font-body, Inter, sans-serif)';
+    ctx.fillStyle = 'rgba(51, 102, 255, 1)';
+    ctx.font = 'bold 14px var(--font-body, Inter, sans-serif)';
     ctx.fillText(`P2 Score: ${scores[2] || 0}`, 25, 80);
     ctx.font = '12px var(--font-body, Inter, sans-serif)';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';

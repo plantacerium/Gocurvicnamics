@@ -4,7 +4,7 @@ import { GameHUD } from './ui/GameHUD.js';
 import { BinduPauseScreen } from './ui/BinduPauseScreen.js';
 import { IntegrationRoom } from './ui/IntegrationRoom.js';
 import { ReplayerScreen } from './ui/ReplayerScreen.js';
-import { TurnManager } from './engine/TurnManager.js';
+import { ActionManager } from './engine/ActionManager.js';
 import { SCREENS } from './core/Constants.js';
 import { gameState } from './core/GameState.js';
 import { Logger } from './utils/Logger.js';
@@ -21,7 +21,7 @@ class GameApp {
     this.appContainer.appendChild(this.uiContainer);
 
     this.router = new ScreenRouter(this.appContainer, this.canvas, this.uiContainer);
-    this.turnManager = null;
+    this.actionManager = null;
     this.hud = null;
 
     this._registerScreens();
@@ -36,7 +36,7 @@ class GameApp {
     });
 
     this.router.register(SCREENS.GAME, async (router, params) => {
-      if (this.turnManager) {
+      if (this.actionManager) {
         return { destroy: () => {} };
       }
 
@@ -48,39 +48,39 @@ class GameApp {
 
       board.generateStartingPieces();
 
-      this.turnManager = new TurnManager(this.canvas, board, config);
+      this.actionManager = new ActionManager(this.canvas, board, config);
 
       this.hud = new GameHUD(this.uiContainer, this.router);
       this.hud.render(1, { 1: 0, 2: 0 });
 
       return {
         destroy: () => {
-          const stats = this.turnManager?.scoreManager?.getStats();
+          const stats = this.actionManager?.scoreManager?.getStats();
           if (stats) gameState.setStats(stats);
-          if (this.turnManager) { this.turnManager.destroy(); this.turnManager = null; }
+          if (this.actionManager) { this.actionManager.destroy(); this.actionManager = null; }
           if (this.hud) { this.hud.destroy(); this.hud = null; }
         }
       };
     });
 
     this.router.register(SCREENS.BINDU_PAUSE, async () => {
-      if (this.turnManager) this.turnManager.gameLoop.stop();
+      if (this.actionManager) this.actionManager.gameLoop.stop();
       const screen = new BinduPauseScreen(this.router);
       screen.render();
       return {
         ...screen,
         destroy: () => {
           screen.destroy();
-          if (this.turnManager) this.turnManager.gameLoop.start();
+          if (this.actionManager) this.actionManager.gameLoop.start();
         }
       };
     });
 
     this.router.register(SCREENS.INTEGRATION, async () => {
-      if (this.turnManager) {
-        gameState.setStats(this.turnManager.scoreManager.getStats());
-        this.turnManager.destroy();
-        this.turnManager = null;
+      if (this.actionManager) {
+        gameState.setStats(this.actionManager.scoreManager.getStats());
+        this.actionManager.destroy();
+        this.actionManager = null;
       }
       if (this.hud) { this.hud.destroy(); this.hud = null; }
       const screen = new IntegrationRoom(this.router);
@@ -89,7 +89,7 @@ class GameApp {
     });
 
     this.router.register(SCREENS.REPLAYER, async () => {
-      if (this.turnManager) { this.turnManager.destroy(); this.turnManager = null; }
+      if (this.actionManager) { this.actionManager.destroy(); this.actionManager = null; }
       const screen = new ReplayerScreen(this.router);
       await screen.render();
       return screen;

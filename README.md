@@ -1,17 +1,9 @@
 # Gocurvicnamics
 
-Asynchronous kinetic trajectory strategy — dual-engine physics (Matter.js / Rapier2D), atomic modular architecture, and AI-powered post-game reflection synthesis.
+Asynchronous and Real-Time kinetic trajectory strategy — dual-engine physics (Matter.js / Rapier2D), atomic modular architecture, and AI-powered post-game reflection synthesis.
 
-Two players take turns drawing cubic bezier trajectories on a frictionless board. Once launched, a piece bounces perpetually with zero energy loss, colliding with walls and enemy pieces until its HP is depleted. The last player with a surviving piece wins.
+Two players act simultaneously (real-time hot-seat with multi-touch/Pointer ID tracking) drawing cubic bezier trajectories on a frictionless board. Once launched, a piece acts as a guided projectile following its curve, bouncing perpetually with zero energy loss, colliding with walls and enemy pieces until its HP is depleted. The last player with a surviving piece wins.
 
-## Logo
-
-![Gocurvicnamics](app-icon.png)
-
-## UI
-
-![Start Game UI](./assets/Gocurvicnamics_Checkpoint_3.JPG)
-![Game UI](./assets/Gocurvicnamics_Checkpoint_3_Game.JPG)
 ---
 
 ## Core Gameplay
@@ -30,19 +22,19 @@ Two players take turns drawing cubic bezier trajectories on a frictionless board
 └─────────────────────────────────────────────────┘
 ```
 
-- **1400×800px** canvas, **50px** wall thickness, **5×5** logical grid
+- **1400×800px** canvas, **50px** wall thickness, **5×5** logical grid per player
 - **60px** cell size, **15px** empty space between cells
-- Player 1 occupies the 2 left anchor zones; Player 2 the 2 right zones
+- Player 1 (Red) occupies the left anchor zones; Player 2 (Blue) the right zones
 - Center column is **Void Expanse** — transit space with no placement
 - Wall boundaries are static with **restitution 1.0** — perfect elastic bounce
 
-### Turn Cycle
+### Real-Time & Simultaneous Play
 
-1. **SELECT_PIECE** — click one of your pieces on the board
-2. **DRAW_TRACE** — click 3 points per segment (CP1 → CP2 → Endpoint), Enter to confirm, Esc to cancel
-3. **ANIMATING_TRACE** — piece glides along the drawn bezier curve
-4. **PHYSICS_RESOLVE** — piece inherits the curve's end-vector momentum, bounces forever until destroyed
-5. **END_TURN** — switches to the other player
+The game abandons strict global turns in favor of a frenetic, real-time strategy model:
+1. **Pointer ID Tracking** — The game tracks physical cursors (mouse/touch). Clicking a piece in the HUD assigns that specific cursor to the corresponding team (Red or Blue).
+2. **Strict Grid Snapping** — Cursors assigned to a team can only spawn pieces within their respective colored anchor zones. Cross-spawning attempts are blocked to prevent friendly-fire sabotage.
+3. **Trace & Launch** — Draw a cubic bezier curve to launch a piece. The piece accelerates along the path dynamically (like a guided missile) and naturally reacts to physics collisions along the way.
+4. **Perpetual Physics** — Pieces inherit immense momentum and bounce elastically indefinitely.
 
 ### Perpetual Motion
 
@@ -74,6 +66,8 @@ A launched piece conserves all momentum indefinitely. The only way it stops is t
 | **Dampener** | 1.5 | 8 | 24px | Heavy: only takes damage if `relVel > 8`; 30% knockback reduction |
 | **Amplifier** | 0.5 | 1 | 16px | Suicide bomb: deals `this.hp` as burst damage, emits 120px-radius shockwave |
 | **Slingshot** | 0.8 | 2 | 18px | Kinetic: damage multiplied by drawn curve length (0.5×–5×) |
+| **Graviton** | 2.5 | 5 | 24px | Anchor: Massive weight, absorbs heavy impacts. |
+| **Phantom** | 0.6 | 2 | 16px | Phase: Takes 0 damage if `relVel > 10.0` (phases through high-speed hits). |
 
 ---
 

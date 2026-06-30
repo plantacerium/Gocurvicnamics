@@ -48,6 +48,7 @@ export class PhysicsTauri extends PhysicsAdapter {
       const updates = await invoke('physics_step');
       let movement = false;
 
+      // Process Tauri physical updates
       for (const update of updates) {
         const piece = this.board.getPiece(update.id);
         if (!piece || piece.destroyed) continue;
@@ -58,11 +59,54 @@ export class PhysicsTauri extends PhysicsAdapter {
           movement = true;
         }
 
-        piece.x = update.x;
-        piece.y = update.y;
+        // If piece was on a path but its physics deviated drastically (collision), derail it
+        const pd = this._activePaths.get(piece.id);
+        if (pd && (dx > 20 || dy > 20)) {
+           this._activePaths.delete(piece.id);
+        }
+
+        // Only apply Tauri update if not strictly path following
+        if (!this._activePaths.has(piece.id)) {
+           piece.x = update.x;
+           piece.y = update.y;
+        }
 
         if (update.hp !== undefined && update.hp < piece.hp) {
           piece.takeDamage(piece.hp - update.hp);
+        }
+      }
+
+      // Process JS-side Path Following overrides
+      for (const [pieceId, pathData] of this._activePaths.entries()) {
+        const piece = this.board.getPiece(pieceId);
+        if (!piece || piece.destroyed) {
+          this._activePaths.delete(pieceId);
+          continue;
+        }
+
+        pathData.currentDist += pathData.speed;
+        if (pathData.currentDist >= pathData.totalLen) {
+           this._activePaths.delete(pieceId);
+        } else {
+           let distAccum = 0;
+           let targetPos = null;
+           for (const curve of pathData.curves) {
+             const clen = curve.length();
+             if (pathData.currentDist <= distAccum + clen) {
+               const localT = (pathData.currentDist - distAccum) / clen;
+               targetPos = curve.get(localT);
+               break;
+             }
+             distAccum += clen;
+           }
+           
+           if (targetPos) {
+              piece.x = targetPos.x;
+              piece.y = targetPos.y;
+              movement = true;
+              // Override backend position so it doesn't fight us
+              await this.teleportPiece(pieceId, targetPos.x, targetPos.y);
+           }
         }
       }
 
@@ -84,6 +128,28 @@ export class PhysicsTauri extends PhysicsAdapter {
     } catch (e) {
       log.warn('apply_impulse failed:', e);
     }
+  }
+
+  constructor(board) {
+    super(board);
+    this._activePaths = new Map();
+  }
+
+  async followPath(pieceId, curves, multiplier) {
+    if (!curves || curves.length === 0) return;
+    
+    let totalLen = 0;
+    for (const c of curves) totalLen += c.length();
+    
+    const piece = this.board.getPiece(pieceId);
+    const speed = PHYSICS_DEFAULTS.impulseBaseMagnitude * multiplier * (piece?.hp ? 1.0 : 1.0) * 8.0; // aprox
+
+    this._activePaths.set(pieceId, {
+      curves,
+      currentDist: 0,
+      totalLen,
+      speed
+    });
   }
 
   async flushStep() {

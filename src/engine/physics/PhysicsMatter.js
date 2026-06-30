@@ -47,6 +47,9 @@ export class PhysicsMatter extends PhysicsAdapter {
     this._collisionQueue = [];
     // Per-piece curve-direction memory (chaos pieces: random dir, kept stable per launch)
     this._curveDirState  = new Map();
+    this._curveDirState  = new Map();
+    this._pinnedPieces   = new Set();
+    this._activePaths    = new Map(); // pieceId -> { curves, t, speed, totalLen }
     this._ready          = true;
 
     Events.on(this._engine, 'collisionStart', (event) => {
@@ -86,6 +89,8 @@ export class PhysicsMatter extends PhysicsAdapter {
     this._walls          = [];
     this._collisionQueue = [];
     this._curveDirState.clear();
+    this._pinnedPieces.clear();
+    this._activePaths.clear();
   }
 
   _createWalls() {
@@ -145,13 +150,53 @@ export class PhysicsMatter extends PhysicsAdapter {
       if (!body) continue;
 
       // Non-launched, un-hit pieces stay perfectly pinned
-      if (!piece.launched && !collidedIds.has(piece.id)) {
+      // Non-launched, un-hit pieces stay perfectly pinned. Also manually pinned pieces (via tracing) stop.
+      if ((!piece.launched && !collidedIds.has(piece.id)) || this._pinnedPieces.has(piece.id)) {
         Body.setPosition(body, { x: piece.x, y: piece.y });
         Body.setVelocity(body, { x: 0, y: 0 });
         continue;
       }
 
       const sp = pieceSpecs(piece);
+
+      // ── Path Following (Guided Missile) ───────────────────────────────────
+      const pathData = this._activePaths.get(piece.id);
+      if (pathData) {
+        // Avance de distancia
+        pathData.currentDist += pathData.speed;
+        
+        if (pathData.currentDist >= pathData.totalLen) {
+           // Llegó al final, se suelta con su inercia actual
+           this._activePaths.delete(piece.id);
+        } else {
+           // Encontrar en qué curva está
+           let distAccum = 0;
+           let targetPos = null;
+           for (const curve of pathData.curves) {
+             const clen = curve.length();
+             if (pathData.currentDist <= distAccum + clen) {
+               const localT = (pathData.currentDist - distAccum) / clen;
+               targetPos = curve.get(localT);
+               break;
+             }
+             distAccum += clen;
+           }
+           
+           if (targetPos) {
+              // Set velocity so Matter.js moves the piece towards the point and can resolve collisions on the way
+              const dx = targetPos.x - body.position.x;
+              const dy = targetPos.y - body.position.y;
+              Body.setVelocity(body, { x: dx, y: dy });
+           }
+           
+           piece.x  = body.position.x;
+           piece.y  = body.position.y;
+           piece.vx = body.velocity.x;
+           piece.vy = body.velocity.y;
+           movement = true;
+           continue; // Saltar lógica de gravedad e inercias base mientras sigue el path
+        }
+      }
 
       // ── Curvature / Magnus effect ─────────────────────────────────────────
       if (sp.curvature > 0) {
@@ -242,7 +287,12 @@ export class PhysicsMatter extends PhysicsAdapter {
       // CRITICAL: If neither piece has been launched yet, this is a start-of-game
       // penetration artifact from Matter.js resolving overlapping bodies.
       // Ignore it completely — pieces must stay pinned until explicitly launched.
+      // CRITICAL: If neither piece has been launched yet, ignore penetration artifact
       if (!pieceA.launched && !pieceB.launched) continue;
+      
+      // If they had an active path, a physical collision derails them!
+      if (this._activePaths.has(pieceA.id)) this._activePaths.delete(pieceA.id);
+      if (this._activePaths.has(pieceB.id)) this._activePaths.delete(pieceB.id);
 
       const spA = pieceSpecs(pieceA);
       const spB = pieceSpecs(pieceB);
@@ -258,16 +308,8 @@ export class PhysicsMatter extends PhysicsAdapter {
       const relVelB    = Vector.dot(bodyB.velocity, normal);
       const impactSpeed = Math.abs(relVelA - relVelB);
 
-      // --- Particle collider formula ---
-      // Combined restitution (geometric mean keeps energy calculation stable)
-      const combinedRestitution = Math.sqrt(spA.restitution * spB.restitution);
-
-      // Impulse: each piece is pushed back proportional to the OTHER's massInteraction
-      const impulseA = impactSpeed * spB.massInteraction * combinedRestitution;
-      const impulseB = impactSpeed * spA.massInteraction * combinedRestitution;
-
-      let velA = Vector.add(bodyA.velocity, Vector.mult(normal,  impulseA));
-      let velB = Vector.add(bodyB.velocity, Vector.mult(normal, -impulseB));
+      let velA = bodyA.velocity;
+      let velB = bodyB.velocity;
 
       // --- Spin / lateral kick ---
       const combinedSpin = (spA.spinFactor + spB.spinFactor) * 0.5;
@@ -312,6 +354,8 @@ export class PhysicsMatter extends PhysicsAdapter {
 
       // --- Damage (only cross-player) ---
       if (pieceA.playerId !== pieceB.playerId) {
+        pieceA.lastHitTime = Date.now();
+        pieceB.lastHitTime = Date.now();
         if (this._collisionResolver) {
           const result = this._collisionResolver.resolve(pieceA, pieceB, impactSpeed);
           if (result.shockwave && this._shockwaveGen) {
@@ -359,6 +403,27 @@ export class PhysicsMatter extends PhysicsAdapter {
     Body.setVelocity(body, { x: dx * scaledMag, y: dy * scaledMag });
   }
 
+  async followPath(pieceId, curves, multiplier) {
+    if (!this._ready) return;
+    const body  = this._bodyMap.get(pieceId);
+    const piece = this.board.getPiece(pieceId);
+    if (!body || !piece || !curves || curves.length === 0) return;
+    
+    let totalLen = 0;
+    for (const c of curves) totalLen += c.length();
+    
+    const sp = pieceSpecs(piece);
+    // Velocidad de avance por frame: baseSpeed * multiplier * pieceSpeed
+    const speed = PHYSICS_DEFAULTS.impulseBaseMagnitude * multiplier * sp.speed * 8.0;
+    
+    this._activePaths.set(pieceId, {
+      curves,
+      currentDist: 0,
+      totalLen,
+      speed
+    });
+  }
+
   async teleportPiece(pieceId, x, y) {
     if (!this._ready) return;
     const body = this._bodyMap.get(pieceId);
@@ -378,6 +443,15 @@ export class PhysicsMatter extends PhysicsAdapter {
     if (!body) return;
     World.remove(this._engine.world, body);
     this._bodyMap.delete(pieceId);
+    this._pinnedPieces.delete(pieceId);
+  }
+
+  pinPiece(pieceId) {
+    this._pinnedPieces.add(pieceId);
+  }
+
+  unpinPiece(pieceId) {
+    this._pinnedPieces.delete(pieceId);
   }
 
   destroy() {

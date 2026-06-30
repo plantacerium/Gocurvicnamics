@@ -55,13 +55,16 @@ export class Renderer {
     if (this.ghostTrailRenderer) {
       this.ghostTrailRenderer.render(this.ctx);
     }
+    if (this.cosmicEventManager) {
+      this.effectsRenderer.renderCosmicEvents(this.cosmicEventManager.getActiveEvents(), dt);
+    }
     this.traceRenderer.render(this.traceInput);
-    this.pieceRenderer.render(this.board.getAllPieces(), this.traceInput.selectedPieceId, dt, this.currentPlayer);
+    this.pieceRenderer.render(this.board.getAllPieces(), this.traceInput, dt);
     if (this.shockwaveGenerator) {
       this.effectsRenderer.renderShockwaves(this.shockwaveGenerator.getActive());
     }
     this.effectsRenderer.renderActiveParticles();
-    this.hudRenderer.render(this.turnNumber, this.currentPlayer, this.scores, this.board);
+    this.hudRenderer.render(this.scores, this.board);
   }
 
   setGameState(currentPlayer, turnNumber, scores) {

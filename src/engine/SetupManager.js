@@ -6,7 +6,14 @@ export class SetupManager {
   constructor(canvas) {
     this.canvas = canvas;
     this.board = new Board({});
-    this.renderer = new Renderer(canvas, this.board, { state: 'IDLE' });
+    
+    // Mock trace input for the renderer during setup phase
+    const mockTraceInput = {
+      getActiveTraces: () => [],
+      pieceTraceMap: new Map()
+    };
+    
+    this.renderer = new Renderer(canvas, this.board, mockTraceInput);
     this.currentPlayer = 1;
     this.selectedPieceType = PIECE_TYPES.BASE;
     this.isRendering = true;
