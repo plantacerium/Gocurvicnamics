@@ -4,6 +4,15 @@ Asynchronous and Real-Time kinetic trajectory strategy — dual-engine physics (
 
 Two players act simultaneously (real-time hot-seat with multi-touch/Pointer ID tracking) drawing cubic bezier trajectories on a frictionless board. Once launched, a piece acts as a guided projectile following its curve, bouncing perpetually with zero energy loss, colliding with walls and enemy pieces until its HP is depleted. The last player with a surviving piece wins.
 
+## Logo
+
+![Gocurvicnamics](app-icon.png)
+
+## UI
+
+![Start Game UI](./assets/Gocurvicnamics_Checkpoint_3.JPG)
+![Game UI](./assets/Gocurvicnamics_Checkpoint_3_Game.JPG)
+
 ---
 
 ## Core Gameplay
