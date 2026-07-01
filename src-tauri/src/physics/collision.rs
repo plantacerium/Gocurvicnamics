@@ -23,6 +23,33 @@ pub fn step(
     let (_cf_send, _cf_recv) = crossbeam::channel::unbounded();
     let event_handler = ChannelEventCollector::new(collision_send, _cf_send);
 
+    // Apply Magnus effect (open curves)
+    for (_, handle) in piece_handles.iter() {
+        if let Some(body) = rigid_body_set.get_mut(*handle) {
+            let mut curvature = 0.0;
+            if let Some(collider_handle) = body.colliders().first() {
+                if let Some(collider) = collider_set.get(*collider_handle) {
+                    curvature = f32::from_bits((collider.user_data >> 64) as u32);
+                }
+            }
+            
+            if curvature > 0.0 {
+                let spin = body.angvel();
+                let linvel = *body.linvel();
+                
+                // Force decay of spin for open curves
+                body.set_angvel(spin * 0.98, true);
+                
+                if spin.abs() > 0.001 {
+                    let orth_vel = vector![-linvel.y, linvel.x];
+                    let mass = body.mass();
+                    let impulse = orth_vel * spin * curvature * mass * 0.02; 
+                    body.apply_impulse(impulse, true);
+                }
+            }
+        }
+    }
+
     physics_pipeline.step(
         &gravity,
         integration_parameters,
@@ -68,10 +95,12 @@ fn resolve_collision(rigid_body_set: &mut RigidBodySet, collider_set: &mut Colli
             let new_hp2 = (hp2 - DAMAGE_PER_COLLISION).max(0.0);
 
             if let Some(c1) = collider_set.get_mut(handle1) {
-                c1.user_data = ((player1 as u128) << 32) | (new_hp1 as u32 as u128);
+                let mask = !0xFFFFFFFFu128;
+                c1.user_data = (c1.user_data & mask) | (new_hp1 as u32 as u128);
             }
             if let Some(c2) = collider_set.get_mut(handle2) {
-                c2.user_data = ((player2 as u128) << 32) | (new_hp2 as u32 as u128);
+                let mask = !0xFFFFFFFFu128;
+                c2.user_data = (c2.user_data & mask) | (new_hp2 as u32 as u128);
             }
         }
     }

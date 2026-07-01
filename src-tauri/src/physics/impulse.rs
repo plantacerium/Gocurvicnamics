@@ -28,3 +28,16 @@ pub fn teleport_piece(
         }
     }
 }
+
+pub fn set_spin(
+    rigid_body_set: &mut RigidBodySet,
+    piece_handles: &HashMap<String, RigidBodyHandle>,
+    piece_id: &str,
+    spin: f32,
+) {
+    if let Some(handle) = piece_handles.get(piece_id) {
+        if let Some(body) = rigid_body_set.get_mut(*handle) {
+            body.set_angvel(spin, true);
+        }
+    }
+}

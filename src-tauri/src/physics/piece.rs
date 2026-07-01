@@ -19,7 +19,9 @@ pub fn add_piece(
     let handle = rigid_body_set.insert(rigid_body);
 
     let mass = piece.piece_type.mass();
-    let packed_data: u128 = ((piece.player_id as u128) << 32) | (piece.hp as u32 as u128);
+    let curvature = piece.piece_type.curvature();
+    let curvature_bits = curvature.to_bits() as u128;
+    let packed_data: u128 = (curvature_bits << 64) | ((piece.player_id as u128) << 32) | (piece.hp as u32 as u128);
 
     let collider = ColliderBuilder::ball(piece.radius)
         .restitution(COLLIDER_RESTITUTION)

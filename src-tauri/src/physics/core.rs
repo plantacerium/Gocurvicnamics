@@ -87,6 +87,27 @@ impl PhysicsCore {
         impulse::teleport_piece(&mut self.rigid_body_set, &self.piece_handles, piece_id, x, y);
     }
 
+    pub fn set_spin(&mut self, piece_id: &str, spin: f32) {
+        impulse::set_spin(&mut self.rigid_body_set, &self.piece_handles, piece_id, spin);
+    }
+
+    pub fn pin_piece(&mut self, piece_id: &str) {
+        if let Some(handle) = self.piece_handles.get(piece_id) {
+            if let Some(body) = self.rigid_body_set.get_mut(*handle) {
+                body.set_body_type(RigidBodyType::Fixed, true);
+            }
+        }
+    }
+
+    pub fn unpin_piece(&mut self, piece_id: &str) {
+        if let Some(handle) = self.piece_handles.get(piece_id) {
+            if let Some(body) = self.rigid_body_set.get_mut(*handle) {
+                body.set_body_type(RigidBodyType::Dynamic, true);
+                body.wake_up(true);
+            }
+        }
+    }
+
     pub fn remove_piece(&mut self, piece_id: &str) {
         if let Some(handle) = self.piece_handles.remove(piece_id) {
             self.rigid_body_set.remove(handle, &mut self.island_manager, &mut self.collider_set, &mut self.impulse_joint_set, &mut self.multibody_joint_set, true);

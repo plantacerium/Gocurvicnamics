@@ -39,9 +39,37 @@ fn teleport_piece(state: tauri::State<AppState>, piece_id: String, x: f32, y: f3
 }
 
 #[tauri::command]
+fn set_spin(state: tauri::State<AppState>, piece_id: String, spin: f32) -> Result<(), String> {
+    let mut phys = lock_physics(&state)?;
+    physics_cmd::set_spin(&mut phys, &piece_id, spin);
+    Ok(())
+}
+
+#[tauri::command]
 fn remove_piece(state: tauri::State<AppState>, piece_id: String) -> Result<(), String> {
     let mut phys = lock_physics(&state)?;
     physics_cmd::remove_piece(&mut phys, &piece_id);
+    Ok(())
+}
+
+#[tauri::command]
+fn add_piece(state: tauri::State<AppState>, piece: PieceData) -> Result<(), String> {
+    let mut phys = lock_physics(&state)?;
+    physics_cmd::add_piece(&mut phys, piece);
+    Ok(())
+}
+
+#[tauri::command]
+fn pin_piece(state: tauri::State<AppState>, piece_id: String) -> Result<(), String> {
+    let mut phys = lock_physics(&state)?;
+    physics_cmd::pin_piece(&mut phys, &piece_id);
+    Ok(())
+}
+
+#[tauri::command]
+fn unpin_piece(state: tauri::State<AppState>, piece_id: String) -> Result<(), String> {
+    let mut phys = lock_physics(&state)?;
+    physics_cmd::unpin_piece(&mut phys, &piece_id);
     Ok(())
 }
 
@@ -74,7 +102,11 @@ pub fn run() {
             physics_step,
             apply_impulse,
             teleport_piece,
+            set_spin,
             remove_piece,
+            add_piece,
+            pin_piece,
+            unpin_piece,
             synthesize_reflections,
             ping,
         ])
