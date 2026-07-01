@@ -87,6 +87,34 @@ export class PhysicsTauri extends PhysicsAdapter {
         pathData.currentDist += pathData.speed;
         if (pathData.currentDist >= pathData.totalLen) {
            this._activePaths.delete(pieceId);
+           
+           // Inyectar spin (angularVelocity) basado en la curvatura de la trayectoria dibujada
+           let injectedSpin = 0;
+           if (pathData.curves && pathData.curves.length > 0) {
+              const firstCurve = pathData.curves[0];
+              const lastCurve = pathData.curves[pathData.curves.length - 1];
+              const startDeriv = firstCurve.derivative(0);
+              const endDeriv = lastCurve.derivative(1);
+              const startAngle = Math.atan2(startDeriv.y, startDeriv.x);
+              let endAngle = Math.atan2(endDeriv.y, endDeriv.x);
+              
+              let diff = endAngle - startAngle;
+              while (diff > Math.PI) diff -= Math.PI * 2;
+              while (diff < -Math.PI) diff += Math.PI * 2;
+              
+              injectedSpin = diff * 0.15;
+           }
+           
+           const sp = pieceSpecs(piece);
+           if (Math.abs(injectedSpin) < 0.05 && sp && sp.curvature > 0) {
+               let dir = sp.curveDir;
+               if (dir === 0) dir = 1; // Default to clockwise if chaotic
+               injectedSpin = dir * 0.2;
+           }
+           
+           if (injectedSpin !== 0) {
+               this.setSpin(pieceId, injectedSpin);
+           }
         } else {
            let distAccum = 0;
            let targetPos = null;
@@ -179,12 +207,58 @@ export class PhysicsTauri extends PhysicsAdapter {
     }
   }
 
+  async setSpin(pieceId, spin) {
+    if (!this._ready) return;
+    try {
+      await invoke('set_spin', { pieceId, spin });
+    } catch (e) {
+      log.warn('set_spin failed:', e);
+    }
+  }
+
   async removePiece(pieceId) {
     if (!this._ready) return;
     try {
       await invoke('remove_piece', { pieceId });
     } catch (e) {
       log.warn('remove_piece failed:', e);
+    }
+  }
+
+  async addPiece(piece) {
+    if (!this._ready) return;
+    try {
+      await invoke('add_piece', { 
+        piece: {
+          id: piece.id,
+          playerId: piece.playerId,
+          type: piece.type,
+          x: piece.x,
+          y: piece.y,
+          radius: piece.radius,
+          hp: piece.hp,
+        }
+      });
+    } catch (e) {
+      log.warn('add_piece failed:', e);
+    }
+  }
+
+  async pinPiece(pieceId) {
+    if (!this._ready) return;
+    try {
+      await invoke('pin_piece', { pieceId });
+    } catch (e) {
+      log.warn('pin_piece failed:', e);
+    }
+  }
+
+  async unpinPiece(pieceId) {
+    if (!this._ready) return;
+    try {
+      await invoke('unpin_piece', { pieceId });
+    } catch (e) {
+      log.warn('unpin_piece failed:', e);
     }
   }
 

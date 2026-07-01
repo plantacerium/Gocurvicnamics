@@ -168,25 +168,65 @@ export class PhysicsMatter extends PhysicsAdapter {
         if (pathData.currentDist >= pathData.totalLen) {
            // Llegó al final, se suelta con su inercia actual
            this._activePaths.delete(piece.id);
+           
+           // Inyectar spin (angularVelocity) basado en la curvatura de la trayectoria dibujada
+           let injectedSpin = 0;
+           if (pathData.curves.length > 0) {
+              const firstCurve = pathData.curves[0];
+              const lastCurve = pathData.curves[pathData.curves.length - 1];
+              const startDeriv = firstCurve.derivative(0);
+              const endDeriv = lastCurve.derivative(1);
+              const startAngle = Math.atan2(startDeriv.y, startDeriv.x);
+              let endAngle = Math.atan2(endDeriv.y, endDeriv.x);
+              
+              let diff = endAngle - startAngle;
+              while (diff > Math.PI) diff -= Math.PI * 2;
+              while (diff < -Math.PI) diff += Math.PI * 2;
+              
+              injectedSpin = diff * 0.15;
+           }
+           
+           // Si el trazo fue recto, aplicar el spin natural de la pieza
+           if (Math.abs(injectedSpin) < 0.05 && sp.curvature > 0) {
+               let dir = sp.curveDir;
+               if (dir === 0) dir = this._curveDirState.get(piece.id) || 1;
+               injectedSpin = dir * 0.2;
+           }
+           
+           Body.setAngularVelocity(body, injectedSpin);
         } else {
            // Encontrar en qué curva está
            let distAccum = 0;
            let targetPos = null;
+           let activeCurve = null;
+           let activeLocalT = 0;
            for (const curve of pathData.curves) {
              const clen = curve.length();
              if (pathData.currentDist <= distAccum + clen) {
-               const localT = (pathData.currentDist - distAccum) / clen;
-               targetPos = curve.get(localT);
+               activeLocalT = (pathData.currentDist - distAccum) / clen;
+               targetPos = curve.get(activeLocalT);
+               activeCurve = curve;
                break;
              }
              distAccum += clen;
            }
            
-           if (targetPos) {
-              // Set velocity so Matter.js moves the piece towards the point and can resolve collisions on the way
-              const dx = targetPos.x - body.position.x;
-              const dy = targetPos.y - body.position.y;
-              Body.setVelocity(body, { x: dx, y: dy });
+           if (targetPos && activeCurve) {
+              // Get the derivative at this point on the curve to find the exact tangent direction
+              const derivative = activeCurve.derivative(activeLocalT);
+              const dirLen = Math.hypot(derivative.x, derivative.y);
+              
+              let vx = 0;
+              let vy = 0;
+              if (dirLen > 0) {
+                // Normalize and scale by the speed we want to travel this tick
+                vx = (derivative.x / dirLen) * pathData.speed;
+                vy = (derivative.y / dirLen) * pathData.speed;
+              }
+              
+              // Set velocity explicitly based on the curve's direction, NOT relative position
+              // This prevents any rubber-banding or oscillation
+              Body.setVelocity(body, { x: vx, y: vy });
            }
            
            piece.x  = body.position.x;
@@ -198,14 +238,21 @@ export class PhysicsMatter extends PhysicsAdapter {
         }
       }
 
-      // ── Curvature / Magnus effect ─────────────────────────────────────────
-      if (sp.curvature > 0) {
-        let dir = sp.curveDir;
-        if (dir === 0) {
-          dir = this._curveDirState.get(piece.id) || 1;
+      // ── Curvature / Magnus effect (Open Curves) ───────────────────────────
+      if (sp.curvature > 0 && !this._activePaths.has(piece.id)) {
+        let spin = body.angularVelocity;
+        
+        // Forzar decaimiento progresivo del spin para crear curvas abiertas
+        Body.setAngularVelocity(body, spin * 0.98);
+        
+        if (Math.abs(spin) < 0.001) spin = 0;
+        
+        if (spin !== 0) {
+           // La rotación depende del spin real y del coeficiente magnus de la pieza
+           const rotationAngle = spin * sp.curvature * 2.0; 
+           const rotated = rotateVec(body.velocity, rotationAngle);
+           Body.setVelocity(body, rotated);
         }
-        const rotated = rotateVec(body.velocity, sp.curvature * dir);
-        Body.setVelocity(body, rotated);
       }
 
       // ── Ghost wrap ────────────────────────────────────────────────────────
@@ -221,7 +268,7 @@ export class PhysicsMatter extends PhysicsAdapter {
       }
 
       // ── Speed floor — infinite movement guarantee ─────────────────────────
-      if (piece.launched) {
+      if (piece.launched && !this._activePaths.has(piece.id)) {
         const minSpeed = 1.5 * sp.speed;
         const curSpeed = Vector.magnitude(body.velocity);
         if (curSpeed < minSpeed) {
@@ -267,6 +314,12 @@ export class PhysicsMatter extends PhysicsAdapter {
         const piece      = this.board.getPiece(movingBody.label);
         if (!piece) continue;
         const sp = pieceSpecs(piece);
+
+        // --- NEW: Derail on wall hit ---
+        if (this._activePaths.has(piece.id)) {
+          this._activePaths.delete(piece.id);
+        }
+        // -------------------------------
 
         // Re-randomise curve direction on wall bounce for chaos pieces
         if (sp.curveDir === 0 && sp.curvature > 0) {

@@ -101,6 +101,12 @@ export class ActionManager {
     // Intercept pointer down to start trace
     this.canvas.addEventListener('pointerdown', (e) => {
       if (e.button === 2) return; // Right click reserved
+
+      // Prevent spawning pieces if this pointer is currently drawing a trajectory
+      if (this.traceInput.traces.has(e.pointerId)) {
+        return;
+      }
+
       const pos = getCanvasCoords(this.canvas, e.clientX, e.clientY);
 
       // 1. Check if clicking on an existing piece to trace
@@ -214,7 +220,7 @@ export class ActionManager {
     if (!piece || curves.length === 0) return;
 
     // Put piece on cooldown
-    piece.cooldown = GAMEPLAY_DEFAULTS.cooldownTimeMs || 3000;
+    piece.cooldown = GAMEPLAY_DEFAULTS.cooldownTimeMs ?? 3000;
 
     // We skip the visual trace animation phase in real-time, it launches instantly.
     const lastCurve = curves[curves.length - 1];

@@ -10,7 +10,7 @@ export const GAMEPLAY_DEFAULTS = {
   defaultPieceCount: 3,
 
   // Real-Time Mechanics
-  cooldownTimeMs: 3000,
+  cooldownTimeMs: 0,
   parryWindowMs: 500,
   timeDilationScale: 0.2,
   cosmicEventsEnabled: false,

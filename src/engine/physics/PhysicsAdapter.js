@@ -26,6 +26,18 @@ export class PhysicsAdapter {
     throw new Error('PhysicsAdapter#applyImpulse() must be overridden');
   }
 
+  async addPiece(piece) {
+    throw new Error('PhysicsAdapter#addPiece() must be overridden');
+  }
+
+  pinPiece(pieceId) {
+    throw new Error('PhysicsAdapter#pinPiece() must be overridden');
+  }
+
+  unpinPiece(pieceId) {
+    throw new Error('PhysicsAdapter#unpinPiece() must be overridden');
+  }
+
   async followPath(pieceId, curves, multiplier) {
     throw new Error('PhysicsAdapter#followPath() must be overridden');
   }

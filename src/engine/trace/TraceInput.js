@@ -8,11 +8,8 @@ class PointerTrace {
   constructor(pointerId, piece) {
     this.pointerId = pointerId;
     this.pieceId = piece.id;
-    this.state = TRACE_STATES.PLACING_CP1;
-    this.startPt = { x: piece.x, y: piece.y };
-    this.cp1 = null;
-    this.cp2 = null;
-    this.endPt = null;
+    this.state = TRACE_STATES.PLACING_CP1; // kept for compatibility
+    this.points = [{ x: piece.x, y: piece.y }];
     this.controller = new TraceController();
     this.controller.start(piece.id, piece.x, piece.y);
     this.activeCurve = null;
@@ -21,60 +18,74 @@ class PointerTrace {
   }
 
   addPoint(pos) {
-    switch (this.state) {
-      case TRACE_STATES.PLACING_CP1:
-        this.cp1 = { ...pos };
-        this.state = TRACE_STATES.PLACING_CP2;
-        break;
-      case TRACE_STATES.PLACING_CP2:
-        this.cp2 = { ...pos };
-        this.state = TRACE_STATES.PLACING_END;
-        break;
-      case TRACE_STATES.PLACING_END:
-        this.endPt = { ...pos };
-        const seg = this.controller.addSegment(this.startPt, this.cp1, this.cp2, this.endPt);
-        try {
-          const bez = new Bezier(...seg.toBezierPoints());
-          seg._length = bez.length();
-          this.completedCurves.push(bez);
-        } catch { seg._length = 0; }
-
-        this.startPt = { ...this.endPt };
-        this.cp1 = null;
-        this.cp2 = null;
-        this.endPt = null;
-        
-        if (TraceValidator.canAddMoreSegments(this.controller.segments.length)) {
-          this.state = TRACE_STATES.PLACING_CP1;
-        } else {
-          this.state = TRACE_STATES.CONFIRM;
-        }
-        break;
+    // If click is very close to the last point, treat it as a COMMIT
+    const lastPt = this.points[this.points.length - 1];
+    const dist = Math.hypot(pos.x - lastPt.x, pos.y - lastPt.y);
+    
+    if (dist < 15 && this.points.length > 1) {
+      this.commitCurrentSegments();
+      return true; // Return true to indicate trace should commit
     }
+
+    this.points.push({ ...pos });
+
+    // If we have 4 points (Start, CP1, CP2, End), we complete a cubic segment
+    if (this.points.length === 4) {
+      this.commitCurrentSegments();
+      // Start a new segment from the end point
+      this.points = [{ ...pos }];
+    }
+
+    return false;
   }
 
   updateMouse(pos) {
     this.mousePos = { ...pos };
-    if (this.state === TRACE_STATES.PLACING_CP1) {
-      this.activeCurve = null;
-    } else if (this.state === TRACE_STATES.PLACING_CP2 && this.cp1) {
-      try {
-        this.activeCurve = new Bezier(
-          this.startPt.x, this.startPt.y,
-          this.cp1.x, this.cp1.y,
-          this.mousePos.x, this.mousePos.y
-        );
-      } catch { this.activeCurve = null; }
-    } else if (this.state === TRACE_STATES.PLACING_END && this.cp1 && this.cp2) {
-      try {
-        this.activeCurve = new Bezier(
-          this.startPt.x, this.startPt.y,
-          this.cp1.x, this.cp1.y,
-          this.cp2.x, this.cp2.y,
-          this.mousePos.x, this.mousePos.y
-        );
-      } catch { this.activeCurve = null; }
+    const pts = [...this.points, this.mousePos];
+    this.activeCurve = this._createCurveFromPoints(pts);
+  }
+
+  _createCurveFromPoints(pts) {
+    try {
+      if (pts.length === 2) {
+        // Linear -> Cubic
+        const p0 = pts[0], p3 = pts[1];
+        const p1 = { x: p0.x + (p3.x - p0.x) / 3, y: p0.y + (p3.y - p0.y) / 3 };
+        const p2 = { x: p0.x + 2 * (p3.x - p0.x) / 3, y: p0.y + 2 * (p3.y - p0.y) / 3 };
+        return new Bezier(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+      } else if (pts.length === 3) {
+        // Quadratic -> Cubic
+        const p0 = pts[0], p1 = pts[1], p2 = pts[2];
+        const cp1 = { x: p0.x + 2/3 * (p1.x - p0.x), y: p0.y + 2/3 * (p1.y - p0.y) };
+        const cp2 = { x: p2.x + 2/3 * (p1.x - p2.x), y: p2.y + 2/3 * (p1.y - p2.y) };
+        return new Bezier(p0.x, p0.y, cp1.x, cp1.y, cp2.x, cp2.y, p2.x, p2.y);
+      } else if (pts.length === 4) {
+        // Cubic
+        const [p0, p1, p2, p3] = pts;
+        return new Bezier(p0.x, p0.y, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+      }
+    } catch {
+      return null;
     }
+    return null;
+  }
+
+  commitCurrentSegments() {
+    // Force the current points to form a segment
+    if (this.points.length < 2) return;
+    
+    // Add the current mouse position as the final point if we are committing early
+    if (this.points.length < 4) {
+       this.activeCurve = this._createCurveFromPoints(this.points);
+    }
+    
+    if (this.activeCurve) {
+       const pts = this.activeCurve.points;
+       const seg = this.controller.addSegment(pts[0], pts[1], pts[2], pts[3]);
+       seg._length = this.activeCurve.length();
+       this.completedCurves.push(this.activeCurve);
+    }
+    this.activeCurve = null;
   }
 }
 
@@ -82,9 +93,9 @@ export class TraceInput {
   constructor(canvas) {
     this.canvas = canvas;
     this.traces = new Map(); // pointerId -> PointerTrace
-    this.pieceTraceMap = new Map(); // pieceId -> pointerId (to prevent multiple pointers tracing same piece)
+    this.pieceTraceMap = new Map(); // pieceId -> pointerId
     this.onTraceComplete = null;
-    this.onTraceStart = null; // Called when a piece starts being traced (useful for Bullet Time)
+    this.onTraceStart = null; 
     this.onTraceCancel = null;
 
     this._boundPointerMove = this._onPointerMove.bind(this);
@@ -132,27 +143,21 @@ export class TraceInput {
     const trace = this.traces.get(e.pointerId);
 
     if (trace) {
-      trace.addPoint(pos);
-      // Auto-commit if it reached CONFIRM state after adding point
-      if (trace.state === TRACE_STATES.CONFIRM) {
+      const shouldCommit = trace.addPoint(pos);
+      if (shouldCommit) {
         this.commitTrace(e.pointerId);
       }
     }
   }
 
   _onKeyDown(e) {
-    // If Enter/Space is pressed, commit the first active trace
     if (e.key === 'Enter' || e.key === ' ') {
       if (this.traces.size > 0) {
         const firstPointer = this.traces.keys().next().value;
         const trace = this.traces.get(firstPointer);
-        // Add final segment to cursor pos if mid-trace
-        if (trace.activeCurve) {
-          let end = trace.mousePos;
-          let c1 = trace.cp1 || end;
-          let c2 = trace.cp2 || c1;
-          trace.controller.addSegment(trace.startPt, c1, c2, end);
-        }
+        // Force add the current mouse position as the final point
+        trace.points.push(trace.mousePos);
+        trace.commitCurrentSegments();
         this.commitTrace(firstPointer);
       }
     } else if (e.key === 'Escape') {
@@ -164,7 +169,7 @@ export class TraceInput {
   }
 
   startTraceForPiece(pointerId, piece) {
-    if (this.pieceTraceMap.has(piece.id)) return; // Already being traced
+    if (this.pieceTraceMap.has(piece.id)) return;
 
     const trace = new PointerTrace(pointerId, piece);
     this.traces.set(pointerId, trace);
@@ -178,9 +183,7 @@ export class TraceInput {
     if (!trace) return;
 
     if (this.onTraceComplete && trace.controller.segments.length > 0) {
-      const curves = trace.controller.segments.map(s => {
-        try { return new Bezier(...s.toBezierPoints()); } catch { return null; }
-      }).filter(Boolean);
+      const curves = trace.completedCurves;
       
       this.onTraceComplete({
         pieceId: trace.pieceId,
@@ -212,8 +215,6 @@ export class TraceInput {
     return this.traces.size;
   }
 
-  // To maintain compatibility with Renderer which reads properties directly
-  // It should now read active traces from getActiveTraces()
   getActiveTraces() {
     return Array.from(this.traces.values());
   }
