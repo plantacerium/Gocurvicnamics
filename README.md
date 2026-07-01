@@ -43,7 +43,16 @@ The game abandons strict global turns in favor of a frenetic, real-time strategy
 1. **Pointer ID Tracking** — The game tracks physical cursors (mouse/touch). Clicking a piece in the HUD assigns that specific cursor to the corresponding team (Red or Blue).
 2. **Strict Grid Snapping** — Cursors assigned to a team can only spawn pieces within their respective colored anchor zones. Cross-spawning attempts are blocked to prevent friendly-fire sabotage.
 3. **Trace & Launch** — Draw a cubic bezier curve to launch a piece. The piece accelerates along the path dynamically (like a guided missile) and naturally reacts to physics collisions along the way.
-4. **Perpetual Physics** — Pieces inherit immense momentum and bounce elastically indefinitely.
+4. **Dynamic Open Curves (Magnus Effect)** — Pieces inherit angular velocity (spin) from their initial drawn trajectory and from bouncing off walls at an angle. This spin generates an orthogonal Magnus force that causes their paths to curve organically in the air. The spin naturally decays over time due to angular friction, causing the tight circular trajectories to open up into natural, fluid arcs.
+5. **Perpetual Physics** — Pieces inherit immense momentum and bounce elastically indefinitely.
+
+### Sistema de Trazado de Curvas (Trace Input)
+
+Este es el sistema de movimiento para trazar trayectorias dinámicas:
+*   **Línea recta:** Haces 1 clic (destino) y haces doble clic rápido en ese punto. El juego genera una curva Bezier lineal y dispara.
+*   **Curva Cuadrática (1 arco):** Haces 1 clic (Punto de control) y doble clic en tu destino. El juego genera una curva Bezier cuadrática.
+*   **Curva Cúbica original (S o arcos complejos):** Haces tus 3 clics como antes (Control 1, Control 2 y Destino). Se confirmará automáticamente al poner el destino.
+*(Nota: Puedes disparar en cualquier momento haciendo un doble clic rápido en la pantalla, o pulsando la tecla Enter/Espacio).*
 
 ### Perpetual Motion
 

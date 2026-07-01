@@ -302,16 +302,25 @@ collisionStart (Matter.js) / CollisionEvent::Started (Rapier2D)
 
 ### 2.4 Bit-Packing (Rapier2D)
 
-HP and player ID are packed into the collider's `u128` `user_data`:
+HP, player ID, and curvature are packed into the collider's `u128` `user_data`:
 
 ```
-bits:  127 ... 64 | 63 ... 32 | 31 ... 0
-        (unused)    player_id      hp (f32 as u32)
+bits:  127 ... 96 | 95 ... 64 | 63 ... 32 | 31 ... 0
+        (unused)    curvature    player_id      hp (f32 as u32)
 ```
 
-- `player1 = (d1 >> 32) as u8` — upper 32 bits
+- `curvature = f32::from_bits((d1 >> 64) as u32)` — bits 64-95
+- `player1 = (d1 >> 32) as u8` — bits 32-63
 - `hp1 = (d1 & 0xFFFFFFFF) as f32` — lower 32 bits
 - Wall colliders have no `user_data` (default 0) → player_id=0 → filtered
+
+### 2.5 Dynamic Open Curves (Magnus Effect)
+
+The physics engine supports a dynamic Magnus effect that operates identically in both Matter.js and Rapier2D backends:
+1. **Trace Inheritance:** When a piece finishes following a drawn bezier path, the difference between the starting and ending angles of the trace is injected into the piece as `angularVelocity` (spin).
+2. **Magnus Deflection:** During free flight, the piece's velocity vector is rotated (Matter.js) or pushed (Rapier2D) proportionally to its `angularVelocity` multiplied by its `curvature` trait coefficient.
+3. **Decay:** `angularVelocity` decays exponentially (`spin * 0.98`) per tick. This guarantees that pieces trace **open curves** (spirals that straighten out) rather than infinite closed circles.
+4. **Collision Spin:** Elastic collisions against walls or other pieces naturally impart `angularVelocity` due to friction, causing the piece to organically bend its trajectory after a bounce.
 
 ---
 
@@ -429,6 +438,7 @@ Both engines read from `PhysicsConfig.js` (JS) and `config.rs` (Rust). Values ar
 | `physics_step` | JS → Rust | — | `Vec<PositionUpdate>` |
 | `apply_impulse` | JS → Rust | `pieceId`, `fx`, `fy` | — |
 | `teleport_piece` | JS → Rust | `pieceId`, `x`, `y` | — |
+| `set_spin` | JS → Rust | `pieceId`, `spin` | — |
 | `remove_piece` | JS → Rust | `pieceId` | — |
 | `synthesize_reflections` | JS → Rust | `p1Text`, `p2Text` | `Result<String, String>` |
 
